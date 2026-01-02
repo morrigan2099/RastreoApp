@@ -15,7 +15,7 @@ st.set_page_config(page_title="Monitor de Reparto Pro", layout="wide")
 # ==========================================
 
 # 1. AIRTABLE (Genera uno nuevo por seguridad)
-AIRTABLE_API_KEY = "PON_TU_NUEVO_TOKEN_AQUI"
+AIRTABLE_API_KEY = "patyclv7hDjtGHB0F.19829008c5dee053cba18720d38c62ed86fa76ff0c87ad1f2d71bfe853ce9783"
 AIRTABLE_BASE_ID = "appglio1RmA0AoWTP"
 AIRTABLE_TABLE_NAME = "Rutas_Vivo"
 
