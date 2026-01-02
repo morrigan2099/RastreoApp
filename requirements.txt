@@ -1,0 +1,7 @@
+streamlit
+pandas
+pyairtable
+gspread
+google-auth
+folium
+streamlit-folium
