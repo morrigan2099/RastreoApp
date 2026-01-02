@@ -28,8 +28,7 @@ CLOUDINARY_API_SECRET = "i0cJCELeYVAosiBL_ltjHkM_FV0"
 
 # 3. GOOGLE SHEETS
 # Instrucción: Borra el texto de ejemplo y PEGA TU JSON COMPLETO entre las comillas triples.
-GOOGLE_JSON_RAW = """
-{
+GOOGLE_JSON_RAW = """{
   "type": "service_account",
   "project_id": "rastreoreparto",
   "private_key_id": "50aefda9bd4c6d17b1a293a43177b48e693d2cd1",
@@ -41,8 +40,7 @@ GOOGLE_JSON_RAW = """
   "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
   "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/gestor-reparto%40rastreoreparto.iam.gserviceaccount.com",
   "universe_domain": "googleapis.com"
-}
-"""
+}"""
 
 # 4. ADMIN
 EMAIL_ADMIN = "morrigan2099@gmail.com"
