@@ -25,17 +25,19 @@ CLOUDINARY_API_SECRET = "TU_SECRET_AQUI" # <--- Pega aquí el secret que borrast
 # 3. GOOGLE SHEETS (Credenciales JSON completas)
 # Borra las llaves vacías {} de abajo y pega TODO el contenido de tu archivo .json
 GOOGLE_JSON_DATA = {
-    "type": "service_account",
-    "project_id": "tu-project-id",
-    "private_key_id": "...",
-    "private_key": "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n",
-    "client_email": "tu-cuenta@tu-proyecto.iam.gserviceaccount.com",
-    "client_id": "...",
-    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-    "token_uri": "https://oauth2.googleapis.com/token",
-    "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-    "client_x509_cert_url": "..."
+  "type": "service_account",
+  "project_id": "rastreoreparto",
+  "private_key_id": "bb56395c6228b29c8e86f572999a94b4d2ec196a",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQCnjK8+VEoeWDtp\njsxBuX5W3IjQtijMco8pHmI5/kt84yZ50e8FHz249VBdyePjkCNVzmEANiRGf3RJ\nuSCo7v3JxqQOuwzF3uICXqII2272tP3WrPQKVzX2la4RUJ/FhlhHrS7GKKyQuqYm\nTMSscz+zT4z+Y2nKi6No9yOqc/kYb0eYH2maHAn+o2xeFxR0DDDdFPDhEMd/VTLi\nQ7bPewbDsqoipxFq6/QBGpOFgoOvLY9Q5BGsopAfdL4prR0u6Rkmyc4EPgyCF0YL\nf/J+t/odvk0ZH925w4iko8/ChJ9cXFMHTSwwHLis4tsLz0FLWc7ya0YVhlUvLOk0\nMOhTZA7zAgMBAAECggEAMQb4rItrmM+Gqw+u8zh9IJutqSz0aUbIX2bVpVSk8Clj\ns9fbUitfG0UlPBx8g7VEsbIPLkmpebuH4p66UNSGDMoEbY8MYMYkaj8YuPDE2ooB\nkRTQ4Em+r6YC5mwqJFl4cZjai/+Q51TGk4R5NGEQ7b5Eapfad/s+WNOgaxs+c4h6\nY3Eswx1WPqE1GMThw/bOMKK0VM41QsADH+82T8usa+97HYbGu2cbrns3ldNiIKbu\nZ6e0W+CbDkej9BesgPp/Il3MVyr+5yngQ5hSEq7x8m/dcb+f4Rb0Th4zzneU5RLb\n7sKncynHzzCLBioyeXbamaSF3yZ46lj5Jee9DDkRSQKBgQDpIPhbCBb4haABu+VT\niHe4k7KrBLI5+/auvDaZZ/ouMvKrryCPse3aGHG+t/t1T+/oh2pEKfzIEPgaor0l\nZtDUCAftmML+RdW+BaGPDHd0suppizGQRFgfeo4rJNHS0h/eZyztLvShrBORoy5n\nP3jgiup6mV/S1Oc64jcN/m1v3QKBgQC3/LESpsNpVqH/L2de5fBdVBdpCvbyooXb\nu/kWbCmUGho8FcLecdRX6JgXHyi6/d68r3hH4DamNEhpwTm6cjSK2HKE0TYeZjdC\nj2K5iTnZ94Fg184b5X1HwARzOlj62ngIlMVth4O05j1nCOW5yR1BiYrQNwlQNwgN\nyGmncdz1DwKBgCQLkfrZPFv+pSe/eoy42/Hw/D4PAtOOTqzjsvlzJy5/eB/tevZc\nx27iOqwHXFzeGDT2wwp5B3mTjhjoMqCWzhEKkNc+uF+CQrMXwcwRXGLxyua4u9gX\niRyM4XBwR/T1wjGr+DlP+kkJBxmMhn82RCVLtUdxcWxyuLHVCjgir58NAoGAdFic\nFSJVojBBguCUKsOXSz1ZDHj9jpPNuBVXP6GobVpQSrysHQS4ddrFCqIOnKjbiFAh\n7LnRdSrMu+uPuOJtbXvQd0LhSTn0KegIUzF+3uIP85CkaqmlnpDDf6ZfDErI6wxB\nCLFQTT3niFdtBh4ynPYATQjwn8QdGLIqddOgGWsCgYEA5KrYBB227E2yeh2/6MSw\npv44Hyc6q22ie+P7lFOCyG27OkRF227+w5k19WECmNTOOElOTUwM3NdAOC9w3inR\nNYmN5Vsal3FinKT764LX7KdIC1NEHB3pQMGs3UHdA0eDaOmKHcXDBAJhdU6wd82g\nwiYyxL97hGTx2+5vqkHhv1o=\n-----END PRIVATE KEY-----\n",
+  "client_email": "gestor-reparto@rastreoreparto.iam.gserviceaccount.com",
+  "client_id": "111821275315601188401",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/gestor-reparto%40rastreoreparto.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
 }
+
 
 # 4. ADMIN
 EMAIL_ADMIN = "tucorreo@gmail.com" # Para que el sistema te comparta el Excel
