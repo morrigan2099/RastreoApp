@@ -1,4 +1,3 @@
-import pydeck as pdk
 import streamlit as st
 import pandas as pd
 from pyairtable import Api
@@ -7,6 +6,8 @@ from google.oauth2.service_account import Credentials
 import cloudinary
 import cloudinary.uploader
 import json
+import folium
+from streamlit_folium import st_folium
 
 # --- 1. CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="Monitor de Reparto Pro", layout="wide")
@@ -55,8 +56,7 @@ try:
         st.error("⚠️ Falta pegar el JSON de Google en la variable GOOGLE_JSON_RAW.")
         st.stop()
         
-    # --- LA SOLUCIÓN AL ERROR ---
-    # Limpiamos espacios "duros" (\xa0) y tabulaciones raras que rompen el JSON
+    # Limpiamos espacios "duros" y tabulaciones raras
     json_limpio = GOOGLE_JSON_RAW.replace('\xa0', ' ').replace('\\\n', '\\n')
     
     google_creds_dict = json.loads(json_limpio, strict=False)
@@ -78,7 +78,6 @@ try:
 
 except json.JSONDecodeError as e:
     st.error(f"Error de formato JSON: {e}")
-    st.info("Consejo: Asegúrate de haber copiado desde la primera llave { hasta la última }")
     st.stop()
 except Exception as e:
     st.error(f"Error de conexión general: {e}")
@@ -90,10 +89,10 @@ except Exception as e:
 
 st.title("🚚 Monitor de Reparto & Cloudinary")
 
-tab1, tab2 = st.tabs(["📍 En Vivo", "☁️ Procesar y Archivar"])
+tab1, tab2 = st.tabs(["📍 En Vivo (Satélite)", "☁️ Procesar y Archivar"])
 
 # ------------------------------------------
-# PESTAÑA 1: MAPA + GALERÍA
+# PESTAÑA 1: MAPA SATELITAL + RUTA
 # ------------------------------------------
 with tab1:
     col_kpi, col_btn = st.columns([4,1])
@@ -108,12 +107,11 @@ with tab1:
         records = []
 
     if records:
-        # 1. Crear DataFrame base
         data = [r['fields'] for r in records]
         df = pd.DataFrame(data)
         
-        # 2. Normalización de Nombres (CORREGIDO PARA INCLUIR ZONA)
-        df.columns = [c.lower() for c in df.columns] # Todo a minúsculas primero
+        # --- NORMALIZACIÓN DE NOMBRES ---
+        df.columns = [c.lower() for c in df.columns]
         
         rename_map = {}
         for col in df.columns:
@@ -125,44 +123,36 @@ with tab1:
             if 'etiq' in col: rename_map[col] = 'Etiqueta_Foto'
             if 'fecha' in col: rename_map[col] = 'Fecha'
             if 'hora' in col: rename_map[col] = 'Hora'
-            if 'zona' in col: rename_map[col] = 'Zona'  # <--- AGREGADO: Detecta 'zona'
+            if 'zona' in col: rename_map[col] = 'Zona' # <--- Ahora sí detecta Zona
             
         df = df.rename(columns=rename_map)
 
-        # 3. Separar GPS y FOTOS
-        if 'Tipo' not in df.columns:
-            df['Tipo'] = 'GPS'
+        if 'Tipo' not in df.columns: df['Tipo'] = 'GPS'
 
         df_gps = df[df['Tipo'] != 'FOTO'].copy()
         df_fotos = df[df['Tipo'] == 'FOTO'].copy()
         
         st.metric("📦 Paquetes/Evidencias hoy", len(df_fotos))
         
-        # 4. MAPA INFALIBLE (FOLIUM)
+        # --- MAPA FORENSE (FOLIUM) ---
         if not df_gps.empty and 'Latitud' in df_gps.columns and 'Longitud' in df_gps.columns:
-            # A. Limpieza de Datos (Vital)
+            # Limpieza Numérica
             df_gps['Latitud'] = pd.to_numeric(df_gps['Latitud'], errors='coerce')
             df_gps['Longitud'] = pd.to_numeric(df_gps['Longitud'], errors='coerce')
             df_gps = df_gps.dropna(subset=['Latitud', 'Longitud'])
             
-            # Ordenar por hora es OBLIGATORIO para que la línea tenga sentido
+            # Ordenar por Hora (Vital para la ruta)
             if 'Hora' in df_gps.columns:
                 df_gps = df_gps.sort_values(by='Hora')
 
             if not df_gps.empty:
-                # Usamos Folium explícitamente (asegúrate de tener 'import folium' arriba)
-                # y 'from streamlit_folium import st_folium'
-                
-                # Calcular centro
                 lat_center = df_gps['Latitud'].mean()
                 lon_center = df_gps['Longitud'].mean()
 
-                # B. CREAR EL MAPA BASE
-                # zoom_start=16 es un zoom cercano (nivel calle)
-                m = folium.Map(location=[lat_center, lon_center], zoom_start=16)
+                # Crear Mapa Base
+                m = folium.Map(location=[lat_center, lon_center], zoom_start=18)
 
-                # C. AGREGAR CAPA DE SATÉLITE (Esri World Imagery)
-                # Esto no requiere API Key y se ve increíble
+                # Capa de Satélite (Esri World Imagery) - Se ve genial y es gratis
                 folium.TileLayer(
                     tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
                     attr='Esri',
@@ -171,62 +161,56 @@ with tab1:
                     control=True
                 ).add_to(m)
 
-                # D. DIBUJAR RUTA Y PUNTOS
+                # Dibujar Rutas por Usuario
                 if 'Usuario' in df_gps.columns:
                     usuarios = df_gps['Usuario'].unique()
                 else:
                     usuarios = ['Desconocido']
 
                 for usuario in usuarios:
-                    # Datos de este usuario
                     if 'Usuario' in df_gps.columns:
                         datos_u = df_gps[df_gps['Usuario'] == usuario]
                     else:
                         datos_u = df_gps
                     
-                    # Lista de coordenadas para la línea [Lat, Lon]
                     coordenadas_linea = datos_u[['Latitud', 'Longitud']].values.tolist()
                     
-                    # 1. Dibujar la LÍNEA (Ruta)
+                    # 1. LÍNEA DE RUTA (Amarillo Neón)
                     folium.PolyLine(
                         locations=coordenadas_linea,
-                        color="yellow",  # Amarillo resalta mucho en satélite
-                        weight=4,        # Grosor de la línea
-                        opacity=0.8,
+                        color="#FFFF00", # Amarillo puro
+                        weight=3,
+                        opacity=0.9,
                         tooltip=f"Ruta: {usuario}"
                     ).add_to(m)
 
-                    # 2. Dibujar los PUNTOS (Ping GPS)
+                    # 2. PUNTOS DE REPORTE (Rojos)
                     for i, row in datos_u.iterrows():
-                        hora_txt = row.get('Hora', 'Unknown')
+                        hora_txt = row.get('Hora', '-')
                         folium.CircleMarker(
                             location=[row['Latitud'], row['Longitud']],
-                            radius=3,           # Radio pequeño
-                            color='red',        # Borde rojo
+                            radius=3,
+                            color='red',
                             fill=True,
-                            fill_color='red',   # Relleno rojo
+                            fill_color='red',
                             fill_opacity=1,
-                            popup=f"Chofer: {usuario}<br>Hora: {hora_txt}" # Al hacer clic sale esto
+                            popup=f"<b>{usuario}</b><br>Hr: {hora_txt}"
                         ).add_to(m)
 
-                # Agregar control para cambiar capas si quisieras (opcional)
-                folium.LayerControl().add_to(m)
-
-                # E. MOSTRAR EN STREAMLIT
-                # width y height definen el tamaño del mapa en pantalla
+                # Renderizar en Streamlit
                 st_folium(m, width=1200, height=600)
                 
-                # F. TABLA DE DATOS (Solo para verificar si algo falla)
-                with st.expander("🕵️ Ver coordenadas (Datos Crudos)"):
-                    cols_ver = [c for c in ['Hora', 'Latitud', 'Longitud', 'Usuario'] if c in df_gps.columns]
+                # Debug protegido
+                with st.expander("🕵️ Ver coordenadas crudas"):
+                    cols_ver = [c for c in ['Hora', 'Latitud', 'Longitud', 'Usuario', 'Zona'] if c in df_gps.columns]
                     st.dataframe(df_gps[cols_ver])
 
             else:
-                st.warning("Hay registros, pero las coordenadas no son válidas (NaN).")
+                st.warning("Hay registros, pero las coordenadas son inválidas.")
         else:
             st.info("Esperando coordenadas GPS...")
 
-        # 5. GALERÍA
+        # --- GALERÍA ---
         if not df_fotos.empty and 'Foto' in df_fotos.columns:
             st.subheader("Últimas Evidencias")
             cols = st.columns(4)
@@ -257,6 +241,7 @@ with tab2:
             data = [r['fields'] for r in records]
             df = pd.DataFrame(data)
             
+            # Normalización para guardado
             df.columns = [c.lower() for c in df.columns]
             rename_map_save = {}
             for col in df.columns:
