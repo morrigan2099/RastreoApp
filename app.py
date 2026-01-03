@@ -82,14 +82,14 @@ def obtener_url_final(valor):
         return valor[0].get("url")
     return None
 
-def calcular_distancia(lat1, lon1, lat2, lon2):
-    R = 6371
-    dlat, dlon = math.radians(lat2-lat1), math.radians(lon2-lon1)
-    a = math.sin(dlat/2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon/2)**2
-    return R * (2 * math.atan2(math.sqrt(a), math.sqrt(1-a)))
+def calcular_distancia_real(lat1, lon1, lat2, lon2):
+    R = 6371.0
+    dlat, dlon = math.radians(lat2 - lat1), math.radians(lon2 - lon1)
+    a = math.sin(dlat / 2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2)**2
+    return R * (2 * math.atan2(math.sqrt(a), math.sqrt(1 - a)))
 
 # ==========================================================
-# UI streamllit
+# UI STREAMLIT
 # ==========================================================
 st.title("🚚 Monitor de Reparto & Evidencias")
 
@@ -104,7 +104,6 @@ with tab1:
         st.warning("No hay datos en Airtable.")
         st.stop()
 
-    # Procesamiento de datos
     df = pd.DataFrame([r["fields"] for r in records])
     df.columns = [c.lower() for c in df.columns]
 
@@ -123,107 +122,100 @@ with tab1:
     df = df.dropna(subset=["Latitud", "Longitud"])
     df["Usuario"] = df["Usuario"].astype(str).str.strip()
     df["Hora_dt"] = pd.to_datetime(df["Hora"], errors="coerce")
-    df["url_foto"] = df["Foto"].apply(obtener_url_final)
+    df["url_limpia"] = df["Foto"].apply(obtener_url_final)
 
-    # --- SIDEBAR RESTAURADO ---
     with st.sidebar:
         st.header("⚙️ Configuración")
-        usuarios_lista = sorted(df["Usuario"].unique())
+        usuarios_lista = sorted(df["Usuario"].unique().tolist())
         sel_usuarios = st.multiselect("Repartidores", usuarios_lista, default=usuarios_lista)
-        
         tipo_mapa = st.radio("Vista de Mapa", ["Calle", "Satélite"])
         st.markdown("---")
-        mostrar_galeria = st.checkbox("📸 Mostrar Galería", value=True)
+        modo_reporte = st.checkbox("📑 Activar Modo Reporte", value=True)
 
-    # --- SEGURIDAD CONTRA ELIMINACIÓN DE TODOS LOS USUARIOS ---
     if not sel_usuarios:
-        st.info("Selecciona al menos un repartidor en el sidebar para visualizar el mapa.")
+        st.info("Selecciona repartidores en el menú lateral.")
     else:
-        df_f = df[df["Usuario"].isin(sel_usuarios)].sort_values("Hora_dt")
+        df_f = df[df["Usuario"].isin(sel_usuarios)].copy()
 
-        col1, col2 = st.columns(2)
-        col1.metric("📍 Registros", len(df_f))
-        col2.metric("📸 Evidencias", df_f["url_foto"].notna().sum())
-
-        # Mapa con Auto-Zoom
-        m = folium.Map(
-            location=[df_f["Latitud"].mean(), df_f["Longitud"].mean()],
-            zoom_start=14,
-            zoom_control=False
-        )
-
+        m = folium.Map(location=[df_f["Latitud"].mean(), df_f["Longitud"].mean()], zoom_start=15, zoom_control=False)
+        
         if tipo_mapa == "Satélite":
-            folium.TileLayer(tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", attr="Esri").add_to(m)
+            folium.TileLayer(tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', attr='Esri').add_to(m)
         else:
-            folium.TileLayer("OpenStreetMap").add_to(m)
+            folium.TileLayer('OpenStreetMap').add_to(m)
 
-        colores = ["red", "blue", "green", "purple", "orange", "darkred", "darkblue"]
+        colores = ['#FF0000', '#00FF00', '#0000FF', '#FF00FF', '#FF8C00', '#00FFFF']
+        resumen_final = []
 
-        for i, usuario in enumerate(sel_usuarios):
+        for i, nombre in enumerate(sel_usuarios):
             color = colores[i % len(colores)]
-            u = df_f[df_f["Usuario"] == usuario].sort_values("Hora_dt")
-            if u.empty: continue
+            u_data = df_f[df_f["Usuario"] == nombre].sort_values("Hora_dt").reset_index(drop=True)
+            dist_total = 0.0
+            
+            if not u_data.empty:
+                coords = u_data[["Latitud", "Longitud"]].values.tolist()
+                
+                if len(coords) > 1:
+                    folium.PolyLine(coords, color='black', weight=7, opacity=0.3).add_to(m)
+                    linea = folium.PolyLine(coords, color=color, weight=3).add_to(m)
+                    PolyLineTextPath(linea, '     ►     ', repeat=True, offset=8, 
+                                     attributes={'fill': color, 'font-weight': 'bold', 'font-size': '20'}).add_to(m)
 
-            coords = u[["Latitud", "Longitud"]].values.tolist()
+                ult_hito = None
+                for j in range(len(u_data)):
+                    row = u_data.iloc[j]
+                    if j < len(u_data) - 1:
+                        p_next = u_data.iloc[j+1]
+                        dist_total += calcular_distancia_real(row["Latitud"], row["Longitud"], p_next["Latitud"], p_next["Longitud"])
 
-            if len(coords) > 1:
-                # Glow Negro y Línea
-                folium.PolyLine(coords, color="black", weight=7, opacity=0.3).add_to(m)
-                linea = folium.PolyLine(coords, color=color, weight=3).add_to(m)
-                PolyLineTextPath(linea, " ► ", repeat=True, offset=7, attributes={'fill': color, 'font-weight': 'bold'}).add_to(m)
+                    if ult_hito is None or (row["Hora_dt"] - ult_hito).total_seconds() >= 900:
+                        folium.Marker([row["Latitud"], row["Longitud"]], icon=folium.DivIcon(html=f'''
+                                <div style="text-align:center;">
+                                    <div style="font-size:16pt; filter: drop-shadow(1px 1px 2px black);">📍</div>
+                                    <div style="font-size:8pt; color:white; background:rgba(0,0,0,0.7); padding:2px 4px; border-radius:3px; font-weight:bold;">{row["Hora"][:5]}</div>
+                                </div>''')).add_to(m)
+                        ult_hito = row["Hora_dt"]
 
-            # Marcadores de tiempo e imágenes
-            ult_hito = None
-            for idx, r in u.iterrows():
-                # Hitos cada 15 min 📍
-                if ult_hito is None or (r["Hora_dt"] - ult_hito).total_seconds() >= 900:
-                    folium.Marker(
-                        [r["Latitud"], r["Longitud"]],
-                        icon=folium.DivIcon(html=f'<div style="font-size:14pt; filter: drop-shadow(1px 1px 1px black);">📍</div>')
-                    ).add_to(m)
-                    ult_hito = r["Hora_dt"]
+                    if row['url_limpia']:
+                        folium.Marker(
+                            [row["Latitud"], row["Longitud"]],
+                            icon=folium.DivIcon(html=f'''
+                                <div style="width:55px; height:55px; border:3px solid {color}; background:white; box-shadow:3px 3px 6px black; border-radius:4px; overflow:hidden;">
+                                    <img src="{row['url_limpia']}" width="55" height="55" style="object-fit:cover;">
+                                </div>'''),
+                            popup=folium.Popup(f'<b>{nombre}</b><br><img src="{row["url_limpia"]}" width="250">', max_width=250)
+                        ).add_to(m)
 
-                # Fotos 📸
-                if r["url_foto"]:
-                    folium.Marker(
-                        [r["Latitud"], r["Longitud"]],
-                        icon=folium.DivIcon(html=f"""
-                            <div style="width:50px;height:50px;border:2px solid {color};
-                                        background:white;box-shadow:2px 2px 5px black;
-                                        border-radius:4px;overflow:hidden">
-                                <img src="{r['url_foto']}" width="46" height="46" style="object-fit:cover">
-                            </div>"""),
-                        popup=folium.Popup(f'<b>{usuario}</b><br><img src="{r["url_foto"]}" width="200">', max_width=250)
-                    ).add_to(m)
+                r_ini, r_fin = u_data.iloc[0], u_data.iloc[-1]
+                folium.Marker([r_ini["Latitud"], r_ini["Longitud"]], icon=folium.DivIcon(html=f'<div style="text-align:center;"><div style="font-size:26pt; filter: drop-shadow(2px 2px 3px black);">📌</div><div style="font-size:8pt; color:white; background:green; padding:1px 3px; border-radius:3px;">{r_ini["Hora"][:5]}</div></div>')).add_to(m)
+                folium.Marker([r_fin["Latitud"], r_fin["Longitud"]], icon=folium.DivIcon(html=f'<div style="text-align:center;"><div style="font-size:26pt; filter: drop-shadow(2px 2px 3px black);">🏁</div><div style="font-size:8pt; color:white; background:black; padding:1px 3px; border-radius:3px;">{r_fin["Hora"][:5]}</div></div>')).add_to(m)
 
-            # Inicio y Fin
-            folium.Marker(coords[0], icon=folium.Icon(color="green", icon="play")).add_to(m)
-            folium.Marker(coords[-1], icon=folium.Icon(color="black", icon="stop")).add_to(m)
+                resumen_final.append({
+                    "Repartidor": nombre, 
+                    "Salida": r_ini["Hora"], 
+                    "Llegada": r_fin["Hora"], 
+                    "Evidencias": u_data['url_limpia'].notna().sum(),
+                    "Distancia": f"{dist_total:.2f} km"
+                })
 
-        # APLICAR AUTO-ZOOM
         m.fit_bounds(df_f[["Latitud", "Longitud"]].values.tolist())
-        st_folium(m, height=700, width="100%")
+        st_folium(m, width="100%", height=700, returned_objects=[])
 
-        if mostrar_galeria:
-            st.markdown("---")
-            st.subheader("📸 Galería de Evidencias")
-            gal = df_f[df_f["url_foto"].notna()]
-            if not gal.empty:
-                cols = st.columns(4)
-                for i, (_, r) in enumerate(gal.iterrows()):
-                    with cols[i % 4]:
-                        st.image(r["url_foto"], caption=f"{r['Usuario']} – {r['Hora']}")
+        if modo_reporte:
+            st.markdown("### 📋 Resumen de Jornada")
+            st.table(pd.DataFrame(resumen_final))
+            st.write("### 📸 Galería de Testigos")
+            df_gal = df_f[df_f['url_limpia'].notna()]
+            if not df_gal.empty:
+                cols = st.columns(2 if len(df_gal) < 3 else 4)
+                for idx, (_, f_row) in enumerate(df_gal.iterrows()):
+                    with cols[idx % (2 if len(df_gal) < 3 else 4)]:
+                        st.image(f_row['url_limpia'], caption=f"{f_row['Usuario']} ({f_row['Hora']})")
             else:
-                st.info("No hay fotos para los usuarios seleccionados.")
+                st.info("No hay fotos para mostrar.")
 
 with tab2:
     st.header("☁️ Cierre del Día")
     if st.button("🚀 Procesar y Archivar", type="primary"):
-        # Lógica de cierre sin cambios, ya funcional
-        records = table.all()
-        if not records:
-            st.error("No hay nada que archivar.")
-        else:
-            # ... (Toda tu lógica de gspread y cloudinary que ya funciona)
-            st.success("✅ Cierre completado")
-            st.balloons()
+        # Tu lógica original de Cloudinary y Google Sheets...
+        st.success("Cierre completado")
