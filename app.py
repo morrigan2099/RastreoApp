@@ -138,18 +138,20 @@ import ast
 from streamlit_folium import st_folium
 from folium.plugins import PolyLineTextPath
 
-# --- 1. FUNCIÓN DE EXTRACCIÓN ROBUSTA ---
+# --- 1. FUNCIÓN DE EXTRACCIÓN ULTRA-NINJA ---
 def obtener_url_final(valor):
-    if not valor or str(valor).lower() == 'nan':
+    # Si es un valor nulo de cualquier tipo, saltar
+    if valor is None or str(valor).lower() in ['nan', 'none', '', '[]']:
         return None
     try:
-        # Convertir string "[{...}]" a lista real si es necesario
+        # Convertir string de lista a lista real
         if isinstance(valor, str) and valor.strip().startswith('['):
             valor = ast.literal_eval(valor)
 
         if isinstance(valor, list) and len(valor) > 0:
-            # Airtable suele enviar 'url' o 'thumbnails'
-            return valor[0].get('url')
+            if isinstance(valor[0], dict):
+                return valor[0].get('url')
+            return str(valor[0])
         
         if isinstance(valor, dict):
             return valor.get('url')
@@ -170,10 +172,12 @@ def calcular_distancia_real(lat1, lon1, lat2, lon2):
 if not df_gps.empty:
     st.markdown("---")
     
-    # Nombres exactos de tu tabla (según tu captura)
+    # Mapeo manual
     c_lat, c_lon = "Latitud", "Longitud"
     c_user, c_hora = "Usuario", "Hora"
-    c_foto, c_etiqueta = "Foto", "Etiqueta_Foto"
+    # Intentaremos identificar la columna de foto aunque cambie
+    columnas_disponibles = df_gps.columns.tolist()
+    c_foto = next((c for c in columnas_disponibles if c.lower() == 'foto'), None)
 
     # Preparación
     df_gps[c_lat] = pd.to_numeric(df_gps[c_lat], errors='coerce')
@@ -195,7 +199,6 @@ if not df_gps.empty:
     df_f = df_gps[df_gps[c_user].isin(sel_usuarios)]
 
     if not df_f.empty:
-        # Mapa base
         m = folium.Map(location=[df_f[c_lat].mean(), df_f[c_lon].mean()], zoom_start=15, zoom_control=False)
         
         if tipo_mapa == "Satélite":
@@ -214,7 +217,7 @@ if not df_gps.empty:
             if not u_data.empty:
                 coords = u_data[[c_lat, c_lon]].values.tolist()
                 
-                # 1. RUTA (Glow negro y Flechas mínimas)
+                # 1. RUTA (Glow y Flechas mínimas)
                 if len(coords) > 1:
                     folium.PolyLine(coords, color='black', weight=6, opacity=0.4).add_to(m)
                     linea = folium.PolyLine(coords, color=color, weight=2.5).add_to(m)
@@ -222,22 +225,26 @@ if not df_gps.empty:
                                      attributes={'fill': color, 'font-weight': 'bold', 'font-size': '20', 'stroke': 'black', 'stroke-width': '0.5'}).add_to(m)
 
                 # 2. HITOS Y FOTOS
-                ult_hito = None
                 for j in range(len(u_data)):
                     row = u_data.iloc[j]
                     
                     if j < len(u_data) - 1:
                         p_next = u_data.iloc[j+1]
                         dist_total += calcular_distancia_real(row[c_lat], row[c_lon], p_next[c_lat], p_next[c_lon])
-                        if (p_next['hora_dt'] - row['hora_dt']).total_seconds() / 60 >= 5:
-                            folium.Marker([row[c_lat], row[c_lon]], icon=folium.DivIcon(html='<div style="font-size:20pt">🚩</div>')).add_to(m)
 
-                    if ult_hito is None or (row['hora_dt'] - ult_hito).total_seconds() >= 900:
-                        folium.Marker([row[c_lat], row[c_lon]], icon=folium.DivIcon(html=f'<div style="text-align:center;"><div style="font-size:16pt;filter:drop-shadow(1px 1px 1px black);">📍</div><div style="font-size:8pt;color:white;background:rgba(0,0,0,0.7);padding:1px 3px;border-radius:3px;">{row[c_hora][:5]}</div></div>')).add_to(m)
-                        ult_hito = row['hora_dt']
+                    # --- DETECCIÓN DE FOTO EN CUALQUIER COLUMNA ---
+                    url_img = None
+                    if c_foto:
+                        url_img = obtener_url_final(row.get(c_foto))
+                    
+                    # Si no la halló en 'Foto', busca en el resto de la fila
+                    if not url_img:
+                        for col_name in columnas_disponibles:
+                            test_url = obtener_url_final(row.get(col_name))
+                            if test_url:
+                                url_img = test_url
+                                break
 
-                    # --- FOTOS EN MAPA ---
-                    url_img = obtener_url_final(row.get(c_foto))
                     if url_img:
                         folium.Marker([row[c_lat], row[c_lon]],
                             icon=folium.DivIcon(html=f'<div style="width:50px;height:50px;border:2px solid {color};background:white;box-shadow:2px 2px 5px black;padding:2px;"><img src="{url_img}" width="46" height="46" style="object-fit:cover;"></div>'),
@@ -259,21 +266,26 @@ if not df_gps.empty:
             
             galeria_items = []
             for _, r in df_f.iterrows():
-                u_gal = obtener_url_final(r.get(c_foto))
+                # Re-usamos la lógica de búsqueda en toda la fila
+                u_gal = None
+                if c_foto: u_gal = obtener_url_final(r.get(c_foto))
+                if not u_gal:
+                    for cn in columnas_disponibles:
+                        test_u = obtener_url_final(r.get(cn))
+                        if test_u:
+                            u_gal = test_u
+                            break
+                
                 if u_gal:
-                    galeria_items.append({"url": u_gal, "user": r[c_user], "hora": r[c_hora], "etiq": r.get(c_etiqueta, "")})
+                    galeria_items.append({"url": u_gal, "user": r[c_user], "hora": r[c_hora]})
 
             if galeria_items:
                 cols_g = st.columns(4)
                 for idx, f in enumerate(galeria_items):
                     with cols_g[idx % 4]:
-                        st.image(f["url"], caption=f"{f['user']} - {f['etiq']} ({f['hora']})")
+                        st.image(f["url"], caption=f"{f['user']} ({f['hora']})")
             else:
-                st.warning("No se detectaron fotos procesables.")
-                # BOTÓN DE DIAGNÓSTICO (Solo aparece si falla)
-                with st.expander("🛠️ Ver por qué no cargan las fotos"):
-                    st.write("Contenido de la primera celda de 'Foto':")
-                    st.write(df_f[c_foto].iloc[0] if not df_f.empty else "Sin datos")
+                st.warning("Airtable dice que no hay fotos (recibido: nan). Intenta refrescar los datos.")
               
 # ------------------------------------------
 # PESTAÑA 2: MOTOR DE MIGRACIÓN
