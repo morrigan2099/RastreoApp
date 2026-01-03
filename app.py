@@ -130,105 +130,120 @@ with tab1:
         
         st.metric("📦 Paquetes/Evidencias hoy", len(df_fotos))
         
-        # 4. MAPA FORENSE MINIMALISTA (Controles fuera del mapa)
-        if not df_gps.empty and 'Latitud' in df_gps.columns and 'Longitud' in df_gps.columns:
+        import pandas as pd
+import streamlit as st
+import folium
+from streamlit_folium import st_folium
+from folium.plugins import PolyLineTextPath
+
+# --- SECCIÓN 4: PANEL DE CONTROL Y MAPA ESTRATÉGICO ---
+if not df_gps.empty:
+    st.markdown("---")
+    
+    # 1. PREPARACIÓN DE DATOS
+    df_gps['Latitud'] = pd.to_numeric(df_gps['Latitud'], errors='coerce')
+    df_gps['Longitud'] = pd.to_numeric(df_gps['Longitud'], errors='coerce')
+    df_gps = df_gps.dropna(subset=['Latitud', 'Longitud'])
+    
+    if 'Hora' in df_gps.columns:
+        df_gps['Hora_dt'] = pd.to_datetime(df_gps['Hora'], format='%H:%M:%S', errors='coerce')
+        df_gps = df_gps.sort_values(by='Hora_dt')
+
+    # 2. CONTROLES (Sidebar para móviles, Horizontal para escritorio)
+    with st.sidebar:
+        st.header("⚙️ Configuración")
+        tipo_mapa = st.radio("Vista de Mapa", ["Calle", "Satélite"])
+        modo_reporte = st.checkbox("📑 Activar Modo Reporte (PDF)")
+        
+        raw_users = df_gps['Usuario'].dropna().unique().tolist()
+        lista_repartidores = sorted([str(u) for u in raw_users])
+        repartidores_sel = st.multiselect("Filtrar Repartidores", lista_repartidores, default=lista_repartidores)
+
+    # 3. FILTRADO Y CÁLCULOS
+    df_filtrado = df_gps[df_gps['Usuario'].isin(repartidores_sel)]
+
+    if not df_filtrado.empty:
+        # Centrado dinámico: Enfocar donde está la acción
+        sw = df_filtrado[['Latitud', 'Longitud']].min().values.tolist()
+        ne = df_filtrado[['Latitud', 'Longitud']].max().values.tolist()
+        centro_lat = df_filtrado['Latitud'].mean()
+        centro_lon = df_filtrado['Longitud'].mean()
+
+        # Crear Mapa
+        m = folium.Map(location=[centro_lat, centro_lon], zoom_start=15, control_scale=True)
+        
+        if tipo_mapa == "Satélite":
+            folium.TileLayer(tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', attr='Esri').add_to(m)
+        else:
+            folium.TileLayer('OpenStreetMap').add_to(m)
+
+        colores = ['#FF0000', '#00FF00', '#0000FF', '#FF00FF', '#FF8C00']
+
+        for i, nombre in enumerate(repartidores_sel):
+            color = colores[i % len(colores)]
+            u_data = df_filtrado[df_filtrado['Usuario'] == nombre]
             
-            # --- INTERFAZ SUPERIOR MINIMALISTA ---
-            col1, col2, col3 = st.columns([1, 1, 3])
+            if len(u_data) > 1:
+                coords = u_data[['Latitud', 'Longitud']].values.tolist()
+                
+                # Dibujar Ruta con Sombra
+                folium.PolyLine(coords, color='black', weight=6, opacity=0.3).add_to(m)
+                linea = folium.PolyLine(coords, color=color, weight=3, opacity=1).add_to(m)
+                
+                # Flechas (1/5 de densidad)
+                PolyLineTextPath(linea, '      ►      ', repeat=True, offset=8, 
+                                 attributes={'fill': color, 'font-weight': 'bold', 'font-size': '18'}).add_to(m)
+
+                # 📌 Inicio y 🏁 Fin
+                r_ini, r_fin = u_data.iloc[0], u_data.iloc[-1]
+                folium.Marker([r_ini['Latitud'], r_ini['Longitud']], 
+                              icon=folium.DivIcon(html=f'<div style="font-size:20pt">📌</div>')).add_to(m)
+                folium.Marker([r_fin['Latitud'], r_fin['Longitud']], 
+                              icon=folium.DivIcon(html=f'<div style="font-size:20pt">🏁</div>')).add_to(m)
+
+                # 📸 TESTIGOS (Fotos)
+                if 'Foto' in u_data.columns:
+                    for _, row in u_data.dropna(subset=['Foto']).iterrows():
+                        html_foto = f'''
+                            <div style="width:60px; height:60px; border:2px solid {color}; border-radius:5px; overflow:hidden;">
+                                <img src="{row['Foto']}" width="60" height="60" style="object-fit:cover;">
+                            </div>
+                            <p style="font-size:7pt; margin:0; text-align:center; background:white;">{row['Hora'][:5]}</p>
+                        '''
+                        folium.Marker([row['Latitud'], row['Longitud']],
+                                      icon=folium.DivIcon(html=html_foto),
+                                      popup=folium.Popup(f'<img src="{row['Foto']}" width="200">', max_width=200)).add_to(m)
+
+        # Ajustar mapa a los puntos encontrados (Auto-centrado)
+        m.fit_bounds([sw, ne])
+
+        # Mostrar Mapa (Ancho adaptable para móviles)
+        st_folium(m, width="100%", height=500 if not modo_reporte else 700, returned_objects=[])
+
+        # 4. CUADRO DE RESUMEN PARA PDF
+        if modo_reporte:
+            st.markdown(f"## 📋 REPORTE DE ACTIVIDAD - {repartidores_sel[0]}")
+            res_col1, res_col2, res_col3 = st.columns(3)
+            with res_col1:
+                st.metric("Hora Inicio", r_ini['Hora'])
+            with res_col2:
+                st.metric("Hora Fin", r_fin['Hora'])
+            with res_col3:
+                # Cálculo simple de distancia (Euclidiana aproximada)
+                dist_aprox = abs(r_fin['Latitud']-r_ini['Latitud']) + abs(r_fin['Longitud']-r_ini['Longitud'])
+                st.metric("Distancia Aprox.", f"{dist_aprox*111:.2f} km")
             
-            with col1:
-                tipo_mapa = st.radio("🗺️ VISTA", ["Calle", "Satélite"], horizontal=True)
-            
-            with col3:
-                # Extraer lista de repartidores para el filtro
-                lista_repartidores = sorted(df_gps['Usuario'].unique().tolist())
-                repartidores_sel = st.multiselect("🙋🏻‍♂️ MOSTRAR REPARTIDORES:", lista_repartidores, default=lista_repartidores)
+            st.write("### 📸 Evidencias Fotográficas")
+            if 'Foto' in df_filtrado.columns:
+                fotos = df_filtrado.dropna(subset=['Foto'])
+                cols_fotos = st.columns(4)
+                for idx, f_row in fotos.iterrows():
+                    cols_fotos[idx % 4].image(f_row['Foto'], caption=f"Hora: {f_row['Hora']}")
 
-            # --- PROCESAMIENTO DE DATOS ---
-            df_gps['Latitud'] = pd.to_numeric(df_gps['Latitud'], errors='coerce')
-            df_gps['Longitud'] = pd.to_numeric(df_gps['Longitud'], errors='coerce')
-            df_gps = df_gps.dropna(subset=['Latitud', 'Longitud'])
-            
-            if 'Hora' in df_gps.columns:
-                df_gps['Hora_dt'] = pd.to_datetime(df_gps['Hora'], format='%H:%M:%S', errors='coerce')
-                df_gps = df_gps.sort_values(by='Hora_dt')
-
-            # --- CREACIÓN DEL MAPA ---
-            lat_center = df_gps['Latitud'].mean()
-            lon_center = df_gps['Longitud'].mean()
-            
-            # Mapa base sin controles internos (control_scale=False)
-            m = folium.Map(location=[lat_center, lon_center], zoom_start=18, control_scale=False, zoom_control=False)
-
-            # Lógica de fondo basada en el radio button de Streamlit
-            if tipo_mapa == "Satélite":
-                folium.TileLayer(
-                    tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-                    attr='Esri', name='Satélite'
-                ).add_to(m)
-            else:
-                folium.TileLayer('OpenStreetMap', name='Calle').add_to(m)
-
-            colores_vibrantes = ['#FF0000', '#00FF00', '#0000FF', '#FF00FF', '#FF8C00', '#7FFF00', '#1E90FF']
-
-            # --- DIBUJO DE RUTAS FILTRADAS ---
-            for i, nombre in enumerate(lista_repartidores):
-                # Solo dibujar si el usuario está seleccionado en el multiselect superior
-                if nombre in repartidores_sel:
-                    color_u = colores_vibrantes[i % len(colores_vibrantes)]
-                    datos_u = df_gps[df_gps['Usuario'] == nombre].copy()
-                    
-                    if len(datos_u) > 1:
-                        coords = datos_u[['Latitud', 'Longitud']].values.tolist()
-                        
-                        # Contorno negro (glow)
-                        folium.PolyLine(locations=coords, color='#000000', weight=5, opacity=0.4).add_to(m)
-                        # Línea principal
-                        linea = folium.PolyLine(locations=coords, color=color_u, weight=2.5, opacity=1.0).add_to(m)
-                        
-                        # Flechas mínimas (1/5 de densidad)
-                        folium.plugins.PolyLineTextPath(
-                            linea, '                              ►                              ', 
-                            repeat=True, offset=8, attributes={'fill': color_u, 'font-weight': 'bold', 'font-size': '20', 'stroke': 'black', 'stroke-width': '0.5'}
-                        ).add_to(m)
-
-                        # Hitos cada 15 min
-                        INTERVALO = 15
-                        ultima_hora = None
-                        for _, row_gps in datos_u.iterrows():
-                            if ultima_hora is None or (row_gps['Hora_dt'] - ultima_hora).total_seconds() >= INTERVALO * 60:
-                                folium.Marker(
-                                    location=[row_gps['Latitud'], row_gps['Longitud']],
-                                    icon=folium.DivIcon(html=f'''
-                                        <div style="text-align: center;">
-                                            <div style="font-size: 16pt; filter: drop-shadow(1px 1px 1px black);">📍</div>
-                                            <div style="font-size: 8pt; color: white; background: rgba(0,0,0,0.7); padding: 1px 3px; border-radius: 3px;">{row_gps['Hora'][:5]}</div>
-                                        </div>
-                                    ''')
-                                ).add_to(m)
-                                ultima_hora = row_gps['Hora_dt']
-
-                        # Marcadores corregidos (Inicio y Fin)
-                        r_ini, r_fin = datos_u.iloc[0], datos_u.iloc[-1]
-                        
-                        # Inicio
-                        folium.Marker(
-                            location=[r_ini['Latitud'], r_ini['Longitud']],
-                            icon=folium.DivIcon(html=f'<div style="font-size: 24pt; filter: drop-shadow(2px 2px 2px black);">📌</div>'),
-                            popup=f"SALIDA: {r_ini['Hora']}"
-                        ).add_to(m)
-                        
-                        # Fin (con offset si están solapados)
-                        dist = abs(r_ini['Latitud'] - r_fin['Latitud']) + abs(r_ini['Longitud'] - r_fin['Longitud'])
-                        off = 0.00005 if dist < 0.0001 else 0
-                        folium.Marker(
-                            location=[r_fin['Latitud'] + off, r_fin['Longitud'] + off],
-                            icon=folium.DivIcon(html=f'<div style="font-size: 24pt; filter: drop-shadow(2px 2px 2px black);">🏁</div>'),
-                            popup=f"LLEGADA: {r_fin['Hora']}"
-                        ).add_to(m)
-
-            # Mostrar el mapa limpio (sin LayerControl interno)
-            st_folium(m, width=1300, height=700, returned_objects=[])
+    else:
+        st.info("Selecciona al menos un repartidor para ver el mapa.")
+else:
+    st.info("Esperando datos de Airtable...")
               
 # ------------------------------------------
 # PESTAÑA 2: MOTOR DE MIGRACIÓN
