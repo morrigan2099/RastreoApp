@@ -134,53 +134,114 @@ with tab1:
         
         st.metric("📦 Paquetes/Evidencias hoy", len(df_fotos))
         
-        # 4. MAPA A PRUEBA DE ERRORES (Con PyDeck)
+        # 4. MAPA INTERACTIVO (Con selector de estilo)
         if not df_gps.empty and 'Latitud' in df_gps.columns and 'Longitud' in df_gps.columns:
-            # Forzar conversión a números
+            # --- A. Limpieza de Datos ---
             df_gps['Latitud'] = pd.to_numeric(df_gps['Latitud'], errors='coerce')
             df_gps['Longitud'] = pd.to_numeric(df_gps['Longitud'], errors='coerce')
-            
-            # Eliminar filas inválidas
             df_gps = df_gps.dropna(subset=['Latitud', 'Longitud'])
             
+            # Ordenar por hora para la ruta
+            if 'Hora' in df_gps.columns:
+                df_gps = df_gps.sort_values(by='Hora')
+
             if not df_gps.empty:
                 import pydeck as pdk 
+                import random
 
-                # Calcular centro del mapa
+                # --- B. SELECTOR DE TIPO DE MAPA ---
+                col_mapa1, col_mapa2 = st.columns([2, 1])
+                with col_mapa1:
+                    estilo_seleccionado = st.radio(
+                        "Estilo del Mapa:",
+                        ["🌎 Satélite (Auditoría)", "🗺️ Calles (Limpio)", "🌑 Oscuro (Contraste)"],
+                        horizontal=True,
+                        label_visibility="collapsed" # Oculta el título para que se vea más limpio
+                    )
+
+                # Traducir selección a URL de Mapbox
+                if "Satélite" in estilo_seleccionado:
+                    map_url = 'mapbox://styles/mapbox/satellite-streets-v12'
+                    color_ruta = [255, 255, 0]   # Amarillo (resalta en satélite)
+                    color_punto = [255, 0, 0]    # Rojo
+                elif "Oscuro" in estilo_seleccionado:
+                    map_url = 'mapbox://styles/mapbox/dark-v10'
+                    color_ruta = [0, 255, 255]   # Cian Neón (resalta en negro)
+                    color_punto = [255, 0, 255]  # Magenta
+                else:
+                    map_url = 'mapbox://styles/mapbox/streets-v11'
+                    color_ruta = [0, 0, 255]     # Azul fuerte (resalta en blanco)
+                    color_punto = [0, 0, 0]      # Negro
+
+                # --- C. PREPARAR CAPAS ---
                 lat_center = df_gps['Latitud'].mean()
                 lon_center = df_gps['Longitud'].mean()
 
-                # Configurar puntos pequeños (Scatterplot)
-                layer = pdk.Layer(
+                path_data = []
+                if 'Usuario' in df_gps.columns:
+                    usuarios = df_gps['Usuario'].unique()
+                else:
+                    usuarios = ['Desconocido']
+                
+                for usuario in usuarios:
+                    datos_usuario = df_gps[df_gps['Usuario'] == usuario]
+                    coordenadas = datos_usuario[['Longitud', 'Latitud']].values.tolist()
+                    
+                    path_data.append({
+                        "path": coordenadas,
+                        "name": usuario,
+                        "color": color_ruta
+                    })
+
+                # Capa 1: RUTA (Línea)
+                layer_ruta = pdk.Layer(
+                    "PathLayer",
+                    path_data,
+                    get_path="path",
+                    get_color="color",
+                    width_scale=1,
+                    width_min_pixels=2,
+                    opacity=0.9,
+                    pickable=True
+                )
+
+                # Capa 2: PUNTOS (Detalle)
+                layer_puntos = pdk.Layer(
                     "ScatterplotLayer",
                     df_gps,
                     get_position='[Longitud, Latitud]',
-                    get_color='[0, 100, 255, 160]', # Azul con transparencia
-                    get_radius=8,                   # Radio en metros (más chico)
+                    get_color=color_punto,
+                    get_radius=2,
                     pickable=True,
                     radius_min_pixels=3,
-                    radius_max_pixels=10,
+                    radius_max_pixels=5,
+                    stroked=True,
+                    get_line_color=[255, 255, 255],
+                    line_width_min_pixels=1,
                 )
 
-                # Vista inicial
                 view_state = pdk.ViewState(
                     latitude=lat_center,
                     longitude=lon_center,
-                    zoom=15,
+                    zoom=16,
                     pitch=0,
                 )
 
-                # Dibujar mapa
+                # --- D. DIBUJAR MAPA ---
                 st.pydeck_chart(pdk.Deck(
-                    map_style='mapbox://styles/mapbox/light-v9',
-                    layers=[layer],
+                    map_style=map_url, # <--- AQUÍ USAMOS LA VARIABLE DINÁMICA
+                    layers=[layer_ruta, layer_puntos],
                     initial_view_state=view_state,
-                    tooltip={"text": "Chofer: {Usuario}\nHora: {Hora}"}
+                    tooltip={"text": "Chofer: {Usuario}\nHora: {Hora}\nLat: {Latitud}\nLon: {Longitud}"}
                 ))
+                
+                with st.expander("🕵️ Ver datos crudos"):
+                    st.dataframe(df_gps[['Hora', 'Latitud', 'Longitud', 'Zona']])
+
             else:
-                st.warning("Hay datos GPS, pero las coordenadas no son válidas.")
+                st.warning("Datos GPS no válidos.")
         else:
-            st.info("Esperando coordenadas GPS...")
+            st.info("Esperando coordenadas...")
 
         # Galería
         if not df_fotos.empty and 'Foto' in df_fotos.columns:
