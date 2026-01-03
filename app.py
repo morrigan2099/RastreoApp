@@ -48,15 +48,13 @@ GOOGLE_JSON_RAW = """
 EMAIL_ADMIN = "morrigan2099@gmail.com"
 
 # ==========================================
-# 🔌 CONEXIÓN A SERVICIOS (CON LIMPIEZA AUTOMÁTICA)
+# 🔌 CONEXIÓN A SERVICIOS
 # ==========================================
 try:
-    # A) Procesar JSON de Google con LIMPIEZA
     if "REEMPLAZA" in GOOGLE_JSON_RAW or len(GOOGLE_JSON_RAW) < 50:
         st.error("⚠️ Falta pegar el JSON de Google en la variable GOOGLE_JSON_RAW.")
         st.stop()
         
-    # Limpiamos espacios "duros" y tabulaciones raras
     json_limpio = GOOGLE_JSON_RAW.replace('\xa0', ' ').replace('\\\n', '\\n')
     
     google_creds_dict = json.loads(json_limpio, strict=False)
@@ -64,11 +62,9 @@ try:
     creds = Credentials.from_service_account_info(google_creds_dict, scopes=scopes)
     gc = gspread.authorize(creds)
 
-    # B) Conectar Airtable
     api = Api(AIRTABLE_API_KEY)
     table = api.table(AIRTABLE_BASE_ID, AIRTABLE_TABLE_NAME)
     
-    # C) Conectar Cloudinary
     cloudinary.config( 
         cloud_name = CLOUDINARY_CLOUD_NAME, 
         api_key = CLOUDINARY_API_KEY, 
@@ -89,10 +85,10 @@ except Exception as e:
 
 st.title("🚚 Monitor de Reparto & Cloudinary")
 
-tab1, tab2 = st.tabs(["📍 En Vivo (Satélite)", "☁️ Procesar y Archivar"])
+tab1, tab2 = st.tabs(["📍 En Vivo (Mapa Dinámico)", "☁️ Procesar y Archivar"])
 
 # ------------------------------------------
-# PESTAÑA 1: MAPA SATELITAL + RUTA
+# PESTAÑA 1: MAPA DINÁMICO + RUTA
 # ------------------------------------------
 with tab1:
     col_kpi, col_btn = st.columns([4,1])
@@ -123,7 +119,7 @@ with tab1:
             if 'etiq' in col: rename_map[col] = 'Etiqueta_Foto'
             if 'fecha' in col: rename_map[col] = 'Fecha'
             if 'hora' in col: rename_map[col] = 'Hora'
-            if 'zona' in col: rename_map[col] = 'Zona' # <--- Ahora sí detecta Zona
+            if 'zona' in col: rename_map[col] = 'Zona'
             
         df = df.rename(columns=rename_map)
 
@@ -134,85 +130,78 @@ with tab1:
         
         st.metric("📦 Paquetes/Evidencias hoy", len(df_fotos))
         
-        # --- MAPA FORENSE (FOLIUM) ---
+        # 4. MAPA FORENSE CRUDO (FOLIUM) - "EL GARABATO"
         if not df_gps.empty and 'Latitud' in df_gps.columns and 'Longitud' in df_gps.columns:
-            # Limpieza Numérica
+            # A. Limpieza de Datos Crudos
             df_gps['Latitud'] = pd.to_numeric(df_gps['Latitud'], errors='coerce')
             df_gps['Longitud'] = pd.to_numeric(df_gps['Longitud'], errors='coerce')
             df_gps = df_gps.dropna(subset=['Latitud', 'Longitud'])
             
-            # Ordenar por Hora (Vital para la ruta)
+            # Ordenar por hora para asegurar que el "garabato" siga la secuencia temporal
             if 'Hora' in df_gps.columns:
                 df_gps = df_gps.sort_values(by='Hora')
 
             if not df_gps.empty:
+                # --- SELECTOR DE ESTILO ---
+                tipo_mapa = st.radio(
+                    "👁️ Estilo de Visualización:",
+                    ["🌎 Satélite (Auditoría)", "🗺️ Calles (Limpio)", "🌑 Oscuro (Contraste)"],
+                    horizontal=True, label_visibility="collapsed"
+                )
+
+                if "Satélite" in tipo_mapa:
+                    tiles_url = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
+                    attr_txt = 'Esri World Imagery'; color_ruta = '#FFFF00'; color_punto = 'red'
+                elif "Oscuro" in tipo_mapa:
+                    tiles_url = 'https://cartodb-basemaps-{s}.global.ssl.fastly.net/dark_all/{z}/{x}/{y}.png'
+                    attr_txt = 'CartoDB Dark'; color_ruta = '#00FFFF'; color_punto = 'magenta'
+                else:
+                    tiles_url = 'OpenStreetMap'; attr_txt = 'OpenStreetMap'; color_ruta = '#0000FF'; color_punto = 'black'
+
+                # --- GENERACIÓN DEL MAPA ---
                 lat_center = df_gps['Latitud'].mean()
                 lon_center = df_gps['Longitud'].mean()
+                m = folium.Map(location=[lat_center, lon_center], zoom_start=19, tiles=None) # Zoom 19 es casi máximo
 
-                # Crear Mapa Base
-                m = folium.Map(location=[lat_center, lon_center], zoom_start=18)
-
-                # Capa de Satélite (Esri World Imagery) - Se ve genial y es gratis
-                folium.TileLayer(
-                    tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-                    attr='Esri',
-                    name='Satélite',
-                    overlay=False,
-                    control=True
-                ).add_to(m)
-
-                # Dibujar Rutas por Usuario
-                if 'Usuario' in df_gps.columns:
-                    usuarios = df_gps['Usuario'].unique()
+                if tiles_url != 'OpenStreetMap':
+                    folium.TileLayer(tiles=tiles_url, attr=attr_txt, name='Base').add_to(m)
                 else:
-                    usuarios = ['Desconocido']
+                    folium.TileLayer('OpenStreetMap').add_to(m)
+
+                # DIBUJAR RUTA CRUDO (Sin filtros de suavizado)
+                usuarios = df_gps['Usuario'].unique() if 'Usuario' in df_gps.columns else ['Desconocido']
 
                 for usuario in usuarios:
-                    if 'Usuario' in df_gps.columns:
-                        datos_u = df_gps[df_gps['Usuario'] == usuario]
-                    else:
-                        datos_u = df_gps
-                    
+                    datos_u = df_gps[df_gps['Usuario'] == usuario] if 'Usuario' in df_gps.columns else df_gps
                     coordenadas_linea = datos_u[['Latitud', 'Longitud']].values.tolist()
                     
-                    # 1. LÍNEA DE RUTA (Amarillo Neón)
+                    # 1. LA LÍNEA (El Garabato) - Muy delgada para ver superposiciones
                     folium.PolyLine(
                         locations=coordenadas_linea,
-                        color="#FFFF00", # Amarillo puro
-                        weight=3,
-                        opacity=0.9,
-                        tooltip=f"Ruta: {usuario}"
+                        color=color_ruta, 
+                        weight=1.5,       # <--- LÍNEA MUY DELGADA
+                        opacity=1,        # Opacidad total para ver el trazo
+                        no_clip=True      # Evita que Folium recorte la línea al borde del mapa
                     ).add_to(m)
 
-                    # 2. PUNTOS DE REPORTE (Rojos)
+                    # 2. LOS PUNTOS (Hitos GPS) - Diminutos
                     for i, row in datos_u.iterrows():
-                        hora_txt = row.get('Hora', '-')
                         folium.CircleMarker(
                             location=[row['Latitud'], row['Longitud']],
-                            radius=3,
-                            color='red',
+                            radius=2,           # <--- PUNTO MUY PEQUEÑO
+                            color=color_punto,
                             fill=True,
-                            fill_color='red',
-                            fill_opacity=1,
-                            popup=f"<b>{usuario}</b><br>Hr: {hora_txt}"
+                            fill_color=color_punto,
+                            fill_opacity=0.8,
+                            popup=f"<b>{usuario}</b><br>Hr: {row.get('Hora', '-')}"
                         ).add_to(m)
 
-                # Renderizar en Streamlit
                 st_folium(m, width=1200, height=600)
-                
-                # Debug protegido
-                with st.expander("🕵️ Ver coordenadas crudas"):
-                    cols_ver = [c for c in ['Hora', 'Latitud', 'Longitud', 'Usuario', 'Zona'] if c in df_gps.columns]
-                    st.dataframe(df_gps[cols_ver])
-
-            else:
-                st.warning("Hay registros, pero las coordenadas son inválidas.")
-        else:
-            st.info("Esperando coordenadas GPS...")
 
         # --- GALERÍA ---
         if not df_fotos.empty and 'Foto' in df_fotos.columns:
-            st.subheader("Últimas Evidencias")
+            st.write("---")
+            st.subheader("📸 Últimas Evidencias")
             cols = st.columns(4)
             for i, (idx, row) in enumerate(df_fotos.tail(8).iterrows()):
                 col = cols[i % 4]
@@ -326,3 +315,4 @@ with tab2:
             status.update(label="¡Completado!", state="complete")
             st.success(f"Archivo guardado: {sh.url}")
             st.balloons()
+
