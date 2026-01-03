@@ -130,9 +130,9 @@ with tab1:
         
         st.metric("📦 Paquetes/Evidencias hoy", len(df_fotos))
         
-        # 4. MAPA FORENSE CON CAPAS ESTILO PHOTOSHOP
+        # 4. MAPA FORENSE AVANZADO (Flechas, Inicio y Capas de Repartidor)
         if not df_gps.empty and 'Latitud' in df_gps.columns and 'Longitud' in df_gps.columns:
-            # A. Limpieza de datos
+            # A. Limpieza
             df_gps['Latitud'] = pd.to_numeric(df_gps['Latitud'], errors='coerce')
             df_gps['Longitud'] = pd.to_numeric(df_gps['Longitud'], errors='coerce')
             df_gps = df_gps.dropna(subset=['Latitud', 'Longitud'])
@@ -141,8 +141,7 @@ with tab1:
                 df_gps = df_gps.sort_values(by='Hora')
 
             if not df_gps.empty:
-                # --- SELECTOR DE FONDO ---
-                st.write("### 🗺️ Panel de Control de Ruta")
+                st.write("### 📍 Panel de Control de Rutas")
                 tipo_mapa = st.radio(
                     "Fondo del mapa:",
                     ["🌎 Satélite", "🗺️ Calles", "🌑 Oscuro"],
@@ -160,60 +159,76 @@ with tab1:
                     tiles_url = 'OpenStreetMap'
                     attr_txt = 'OpenStreetMap'
 
-                # --- GENERACIÓN DEL MAPA ---
+                # Mapa base
                 lat_center = df_gps['Latitud'].mean()
                 lon_center = df_gps['Longitud'].mean()
-                
-                # Mapa base vacío (le agregaremos las capas después)
                 m = folium.Map(location=[lat_center, lon_center], zoom_start=18, tiles=None)
 
-                # Añadir el fondo elegido
                 if tiles_url != 'OpenStreetMap':
                     folium.TileLayer(tiles=tiles_url, attr=attr_txt, name=tipo_mapa, control=False).add_to(m)
                 else:
                     folium.TileLayer('OpenStreetMap', control=False).add_to(m)
 
-                # --- LÓGICA DE CAPAS POR USUARIO ---
-                usuarios = df_gps['Usuario'].unique() if 'Usuario' in df_gps.columns else ['Desconocido']
-                
-                # Lista de colores fijos para que no cambien al refrescar
-                lista_colores = ['#FFFF00', '#00FFFF', '#FF00FF', '#00FF00', '#FF4500', '#ADFF2F', '#00BFFF']
+                # --- LÓGICA DE CAPAS POR REPARTIDOR ---
+                repartidores = df_gps['Usuario'].unique() if 'Usuario' in df_gps.columns else ['Desconocido']
+                colores_ruta = ['#FFFF00', '#00FFFF', '#FF00FF', '#00FF00', '#FF4500', '#ADFF2F', '#00BFFF']
 
-                for i, usuario in enumerate(usuarios):
-                    # 1. Crear el "FeatureGroup" (La Capa de Photoshop)
-                    capa_usuario = folium.FeatureGroup(name=f"👤 Chofer: {usuario}")
+                for i, nombre in enumerate(repartidores):
+                    # Crear Capa de "Photoshop" para el Repartidor
+                    capa_rep = folium.FeatureGroup(name=f"📦 Repartidor: {nombre}")
+                    color_u = colores_ruta[i % len(colores_ruta)]
                     
-                    # Asignar color (si hay más usuarios que colores, repite)
-                    color_u = lista_colores[i % len(lista_colores)]
+                    datos_u = df_gps[df_gps['Usuario'] == nombre]
+                    coords = datos_u[['Latitud', 'Longitud']].values.tolist()
                     
-                    datos_u = df_gps[df_gps['Usuario'] == usuario]
-                    coordenadas = datos_u[['Latitud', 'Longitud']].values.tolist()
-                    
-                    # 2. Dibujar el garabato en esta capa
-                    folium.PolyLine(
-                        locations=coordenadas,
-                        color=color_u,
-                        weight=1.5,
-                        opacity=1,
-                        no_clip=True
-                    ).add_to(capa_usuario)
-
-                    # 3. Dibujar puntos diminutos en esta capa
-                    for _, row in datos_u.iterrows():
-                        folium.CircleMarker(
-                            location=[row['Latitud'], row['Longitud']],
-                            radius=2,
+                    if len(coords) > 0:
+                        # 1. LA RUTA (El garabato)
+                        linea = folium.PolyLine(
+                            locations=coords,
                             color=color_u,
+                            weight=2,
+                            opacity=0.8,
+                            no_clip=True
+                        ).add_to(capa_rep)
+
+                        # 2. FLECHAS DE DIRECCIÓN (PolyLineTextPath)
+                        # Ponemos flechas cada cierto tramo de la línea
+                        folium.plugins.PolyLineTextPath(
+                            linea,
+                            '  ►  ', # El símbolo de la flecha
+                            repeat=True,
+                            offset=7,
+                            attributes={'fill': color_u, 'font-weight': 'bold', 'font-size': '14'}
+                        ).add_to(capa_rep)
+
+                        # 3. PUNTO DE INICIO (Color Contrastante: Blanco con borde Verde)
+                        inicio = coords[0]
+                        folium.CircleMarker(
+                            location=inicio,
+                            radius=6,
+                            color='#00FF00', # Verde Neón
                             fill=True,
-                            fill_opacity=0.7,
-                            popup=f"Chofer: {usuario}<br>Hora: {row.get('Hora', '-')}"
-                        ).add_to(capa_usuario)
+                            fill_color='white',
+                            fill_opacity=1,
+                            popup=f"🚀 INICIO DE RUTA: {nombre}<br>Hora: {datos_u.iloc[0].get('Hora','-')}",
+                            tooltip="PUNTO DE INICIO"
+                        ).add_to(capa_rep)
 
-                    # 4. AÑADIR LA CAPA AL MAPA
-                    capa_usuario.add_to(m)
+                        # 4. PUNTOS DE TRAYECTO (Muy pequeños)
+                        for _, row in datos_u.iterrows():
+                            folium.CircleMarker(
+                                location=[row['Latitud'], row['Longitud']],
+                                radius=1.5,
+                                color=color_u,
+                                fill=True,
+                                fill_opacity=0.5,
+                                popup=f"Repartidor: {nombre}<br>Hora: {row.get('Hora', '-')}"
+                            ).add_to(capa_rep)
 
-                # --- EL BOTÓN MÁGICO DE CAPAS ---
-                # Esto añade el cuadrito arriba a la derecha para prender/apagar usuarios
+                    # Añadir capa al mapa
+                    capa_rep.add_to(m)
+
+                # Control de capas (Checkbox)
                 folium.LayerControl(collapsed=False).add_to(m)
 
                 # Mostrar mapa
