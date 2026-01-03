@@ -130,88 +130,94 @@ with tab1:
         
         st.metric("📦 Paquetes/Evidencias hoy", len(df_fotos))
         
-        # 4. MAPA FORENSE CRUDO (FOLIUM) - "EL GARABATO"
+        # 4. MAPA FORENSE CON CAPAS ESTILO PHOTOSHOP
         if not df_gps.empty and 'Latitud' in df_gps.columns and 'Longitud' in df_gps.columns:
-            # A. Limpieza de Datos Crudos
+            # A. Limpieza de datos
             df_gps['Latitud'] = pd.to_numeric(df_gps['Latitud'], errors='coerce')
             df_gps['Longitud'] = pd.to_numeric(df_gps['Longitud'], errors='coerce')
             df_gps = df_gps.dropna(subset=['Latitud', 'Longitud'])
             
-            # Ordenar por hora para asegurar que el "garabato" siga la secuencia temporal
             if 'Hora' in df_gps.columns:
                 df_gps = df_gps.sort_values(by='Hora')
 
             if not df_gps.empty:
-                # --- SELECTOR DE ESTILO ---
+                # --- SELECTOR DE FONDO ---
+                st.write("### 🗺️ Panel de Control de Ruta")
                 tipo_mapa = st.radio(
-                    "👁️ Estilo de Visualización:",
-                    ["🌎 Satélite (Auditoría)", "🗺️ Calles (Limpio)", "🌑 Oscuro (Contraste)"],
+                    "Fondo del mapa:",
+                    ["🌎 Satélite", "🗺️ Calles", "🌑 Oscuro"],
                     horizontal=True, label_visibility="collapsed"
                 )
 
+                # Configuración de Fondo
                 if "Satélite" in tipo_mapa:
                     tiles_url = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
-                    attr_txt = 'Esri World Imagery'; color_ruta = '#FFFF00'; color_punto = 'red'
+                    attr_txt = 'Esri World Imagery'
                 elif "Oscuro" in tipo_mapa:
                     tiles_url = 'https://cartodb-basemaps-{s}.global.ssl.fastly.net/dark_all/{z}/{x}/{y}.png'
-                    attr_txt = 'CartoDB Dark'; color_ruta = '#00FFFF'; color_punto = 'magenta'
+                    attr_txt = 'CartoDB Dark'
                 else:
-                    tiles_url = 'OpenStreetMap'; attr_txt = 'OpenStreetMap'; color_ruta = '#0000FF'; color_punto = 'black'
+                    tiles_url = 'OpenStreetMap'
+                    attr_txt = 'OpenStreetMap'
 
                 # --- GENERACIÓN DEL MAPA ---
                 lat_center = df_gps['Latitud'].mean()
                 lon_center = df_gps['Longitud'].mean()
-                m = folium.Map(location=[lat_center, lon_center], zoom_start=19, tiles=None) # Zoom 19 es casi máximo
+                
+                # Mapa base vacío (le agregaremos las capas después)
+                m = folium.Map(location=[lat_center, lon_center], zoom_start=18, tiles=None)
 
+                # Añadir el fondo elegido
                 if tiles_url != 'OpenStreetMap':
-                    folium.TileLayer(tiles=tiles_url, attr=attr_txt, name='Base').add_to(m)
+                    folium.TileLayer(tiles=tiles_url, attr=attr_txt, name=tipo_mapa, control=False).add_to(m)
                 else:
-                    folium.TileLayer('OpenStreetMap').add_to(m)
+                    folium.TileLayer('OpenStreetMap', control=False).add_to(m)
 
-                # DIBUJAR RUTA CRUDO (Sin filtros de suavizado)
+                # --- LÓGICA DE CAPAS POR USUARIO ---
                 usuarios = df_gps['Usuario'].unique() if 'Usuario' in df_gps.columns else ['Desconocido']
+                
+                # Lista de colores fijos para que no cambien al refrescar
+                lista_colores = ['#FFFF00', '#00FFFF', '#FF00FF', '#00FF00', '#FF4500', '#ADFF2F', '#00BFFF']
 
-                for usuario in usuarios:
-                    datos_u = df_gps[df_gps['Usuario'] == usuario] if 'Usuario' in df_gps.columns else df_gps
-                    coordenadas_linea = datos_u[['Latitud', 'Longitud']].values.tolist()
+                for i, usuario in enumerate(usuarios):
+                    # 1. Crear el "FeatureGroup" (La Capa de Photoshop)
+                    capa_usuario = folium.FeatureGroup(name=f"👤 Chofer: {usuario}")
                     
-                    # 1. LA LÍNEA (El Garabato) - Muy delgada para ver superposiciones
+                    # Asignar color (si hay más usuarios que colores, repite)
+                    color_u = lista_colores[i % len(lista_colores)]
+                    
+                    datos_u = df_gps[df_gps['Usuario'] == usuario]
+                    coordenadas = datos_u[['Latitud', 'Longitud']].values.tolist()
+                    
+                    # 2. Dibujar el garabato en esta capa
                     folium.PolyLine(
-                        locations=coordenadas_linea,
-                        color=color_ruta, 
-                        weight=1.5,       # <--- LÍNEA MUY DELGADA
-                        opacity=1,        # Opacidad total para ver el trazo
-                        no_clip=True      # Evita que Folium recorte la línea al borde del mapa
-                    ).add_to(m)
+                        locations=coordenadas,
+                        color=color_u,
+                        weight=1.5,
+                        opacity=1,
+                        no_clip=True
+                    ).add_to(capa_usuario)
 
-                    # 2. LOS PUNTOS (Hitos GPS) - Diminutos
-                    for i, row in datos_u.iterrows():
+                    # 3. Dibujar puntos diminutos en esta capa
+                    for _, row in datos_u.iterrows():
                         folium.CircleMarker(
                             location=[row['Latitud'], row['Longitud']],
-                            radius=2,           # <--- PUNTO MUY PEQUEÑO
-                            color=color_punto,
+                            radius=2,
+                            color=color_u,
                             fill=True,
-                            fill_color=color_punto,
-                            fill_opacity=0.8,
-                            popup=f"<b>{usuario}</b><br>Hr: {row.get('Hora', '-')}"
-                        ).add_to(m)
+                            fill_opacity=0.7,
+                            popup=f"Chofer: {usuario}<br>Hora: {row.get('Hora', '-')}"
+                        ).add_to(capa_usuario)
 
+                    # 4. AÑADIR LA CAPA AL MAPA
+                    capa_usuario.add_to(m)
+
+                # --- EL BOTÓN MÁGICO DE CAPAS ---
+                # Esto añade el cuadrito arriba a la derecha para prender/apagar usuarios
+                folium.LayerControl(collapsed=False).add_to(m)
+
+                # Mostrar mapa
                 st_folium(m, width=1200, height=600)
-
-        # --- GALERÍA ---
-        if not df_fotos.empty and 'Foto' in df_fotos.columns:
-            st.write("---")
-            st.subheader("📸 Últimas Evidencias")
-            cols = st.columns(4)
-            for i, (idx, row) in enumerate(df_fotos.tail(8).iterrows()):
-                col = cols[i % 4]
-                if isinstance(row['Foto'], list) and len(row['Foto']) > 0:
-                    url_img = row['Foto'][0]['url']
-                    caption = f"{row.get('Usuario', '')} - {row.get('Etiqueta_Foto', '')}"
-                    col.image(url_img, caption=caption)
-    else:
-        st.info("Airtable conectado. Esperando datos...")
-
 # ------------------------------------------
 # PESTAÑA 2: MOTOR DE MIGRACIÓN
 # ------------------------------------------
