@@ -130,23 +130,22 @@ with tab1:
         
         st.metric("📦 Paquetes/Evidencias hoy", len(df_fotos))
         
-        # 4. MAPA FORENSE CON HITOS TEMPORALES (Pins cada X minutos)
+        # 4. MAPA FORENSE CORREGIDO (Hora exacta en Inicio y Fin)
         if not df_gps.empty and 'Latitud' in df_gps.columns and 'Longitud' in df_gps.columns:
-            # --- CONFIGURACIÓN DEL INTERVALO ---
-            INTERVALO_MINUTOS = 15  # <--- Cambia a 30 si prefieres menos pines
-            # ----------------------------------
+            # --- CONFIGURACIÓN ---
+            INTERVALO_MINUTOS = 15  
+            # ---------------------
 
             df_gps['Latitud'] = pd.to_numeric(df_gps['Latitud'], errors='coerce')
             df_gps['Longitud'] = pd.to_numeric(df_gps['Longitud'], errors='coerce')
             df_gps = df_gps.dropna(subset=['Latitud', 'Longitud'])
             
             if 'Hora' in df_gps.columns:
-                # Convertir hora a objeto datetime para calcular intervalos
                 df_gps['Hora_dt'] = pd.to_datetime(df_gps['Hora'], format='%H:%M:%S', errors='coerce')
                 df_gps = df_gps.sort_values(by='Hora_dt')
 
             if not df_gps.empty:
-                st.write(f"### 📍 Monitoreo con hitos cada {INTERVALO_MINUTOS} min")
+                st.write(f"### 📍 Auditoría de Ruta (Hitos cada {INTERVALO_MINUTOS} min)")
                 
                 lat_center = df_gps['Latitud'].mean()
                 lon_center = df_gps['Longitud'].mean()
@@ -164,51 +163,55 @@ with tab1:
                     capa_rep = folium.FeatureGroup(name=f"🙋🏻‍♂️ {nombre}") 
                     color_u = colores_ruta[i % len(colores_ruta)]
                     datos_u = df_gps[df_gps['Usuario'] == nombre].copy()
-                    coords = datos_u[['Latitud', 'Longitud']].values.tolist()
                     
-                    if len(coords) > 1:
-                        # 1. RUTA Y FLECHAS (Igual que antes)
+                    if len(datos_u) > 1:
+                        coords = datos_u[['Latitud', 'Longitud']].values.tolist()
+                        
+                        # 1. TRAYECTORIA Y FLECHAS
                         linea = folium.PolyLine(locations=coords, color=color_u, weight=2, opacity=0.8).add_to(capa_rep)
                         folium.plugins.PolyLineTextPath(
                             linea, '                              ►                              ', 
                             repeat=True, offset=8, attributes={'fill': color_u, 'font-weight': 'bold', 'font-size': '20'}
                         ).add_to(capa_rep)
 
-                        # 2. LÓGICA DE HITOS TEMPORALES (Pins cada X minutos)
-                        if 'Hora_dt' in datos_u.columns:
-                            ultima_hora_pin = None
-                            for idx, row in datos_u.iterrows():
-                                hora_actual = row['Hora_dt']
-                                
-                                # Si es el primer punto o han pasado X minutos desde el último pin
-                                if ultima_hora_pin is None or (hora_actual - ultima_hora_pin).total_seconds() >= INTERVALO_MINUTOS * 60:
-                                    folium.Marker(
-                                        location=[row['Latitud'], row['Longitud']],
-                                        icon=folium.DivIcon(html=f'''
-                                            <div style="font-family: sans-serif; color: white; text-align: center;">
-                                                <div style="font-size: 18pt; filter: drop-shadow(2px 2px 2px black);">📍</div>
-                                                <div style="font-size: 9pt; background-color: rgba(0,0,0,0.6); padding: 2px; border-radius: 3px; margin-top: -5px; width: fit-content; margin-left: auto; margin-right: auto;">
-                                                    {row['Hora'][:5]}
-                                                </div>
+                        # 2. PINES DE REFERENCIA (📍) CADA X MINUTOS
+                        ultima_hora_pin = None
+                        for idx, row_gps in datos_u.iterrows():
+                            hora_actual = row_gps['Hora_dt']
+                            if ultima_hora_pin is None or (hora_actual - ultima_hora_pin).total_seconds() >= INTERVALO_MINUTOS * 60:
+                                folium.Marker(
+                                    location=[row_gps['Latitud'], row_gps['Longitud']],
+                                    icon=folium.DivIcon(html=f'''
+                                        <div style="font-family: sans-serif; color: white; text-align: center;">
+                                            <div style="font-size: 18pt; filter: drop-shadow(2px 2px 2px black);">📍</div>
+                                            <div style="font-size: 9pt; background-color: rgba(0,0,0,0.6); padding: 2px; border-radius: 3px; margin-top: -5px; width: fit-content; margin-left: auto; margin-right: auto;">
+                                                {row_gps['Hora'][:5]}
                                             </div>
-                                        '''),
-                                        popup=f"Referencia Temporal: {row['Hora']}"
-                                    ).add_to(capa_rep)
-                                    ultima_hora_pin = hora_actual
+                                        </div>
+                                    '''),
+                                    popup=f"Referencia: {row_gps['Hora']}"
+                                ).add_to(capa_rep)
+                                ultima_hora_pin = hora_actual
 
-                        # 3. MARCADORES DE EXTREMOS (📌 🏁)
-                        # Inicio
+                        # 3. MARCADORES DE EXTREMOS (CORREGIDOS)
+                        # SALIDA (📌)
+                        row_inicio = datos_u.iloc[0]
                         folium.Marker(
-                            location=coords[0],
+                            location=[row_inicio['Latitud'], row_inicio['Longitud']],
                             icon=folium.DivIcon(html=f'<div style="font-size: 25pt; filter: drop-shadow(2px 2px 2px black);">📌</div>'),
-                            popup=f"SALIDA: {row['Hora']}"
+                            popup=f"<b>SALIDA: {nombre}</b><br>Hora: {row_inicio['Hora']}"
                         ).add_to(capa_rep)
                         
-                        # Fin (con pequeño offset para visibilidad)
+                        # LLEGADA (🏁)
+                        row_fin = datos_u.iloc[-1]
+                        # Aplicamos el pequeño offset solo si el inicio y fin son el mismo punto
+                        dist = abs(row_inicio['Latitud'] - row_fin['Latitud']) + abs(row_inicio['Longitud'] - row_fin['Longitud'])
+                        off = 0.00005 if dist < 0.0001 else 0
+                        
                         folium.Marker(
-                            location=[coords[-1][0]+0.00004, coords[-1][1]+0.00004],
+                            location=[row_fin['Latitud'] + off, row_fin['Longitud'] + off],
                             icon=folium.DivIcon(html=f'<div style="font-size: 25pt; filter: drop-shadow(2px 2px 2px black);">🏁</div>'),
-                            popup=f"LLEGADA: {row['Hora']}"
+                            popup=f"<b>LLEGADA: {nombre}</b><br>Hora: {row_fin['Hora']}"
                         ).add_to(capa_rep)
 
                     capa_rep.add_to(m)
