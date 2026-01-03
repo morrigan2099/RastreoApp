@@ -183,14 +183,29 @@ with tab1:
                 })
 
         m.fit_bounds(df_f[["Latitud", "Longitud"]].values.tolist())
-        st_folium(m, width="100%", height=600, returned_objects=[])
+        # --- RENDERIZADO DEL MAPA OPTIMIZADO PARA MÓVIL ---
+        # Reducimos height a 450 para que en móvil no ocupe toda la pantalla
+        # y el usuario pueda scrollear la página por los lados o abajo.
+        st_folium(
+            m, 
+            width="100%", 
+            height=450, 
+            returned_objects=[],
+            dragging=True  # Permite mover el mapa con el dedo
+        )
 
         if modo_reporte:
+            # Añadimos un espacio extra para que sea fácil salir del mapa con el scroll
+            st.markdown("<br>", unsafe_allow_html=True)
+            
             st.markdown("### 📋 Resumen de Jornada")
-            st.table(pd.DataFrame(resumen_jornada))
-            st.write("### 📸 Galería")
+            # Usamos dataframe en lugar de table para que tenga scroll horizontal en móvil
+            st.dataframe(pd.DataFrame(resumen_jornada), use_container_width=True)
+            
+            st.markdown("### 📸 Galería")
             df_gal = df_f[df_f['url_limpia'].notna()]
             if not df_gal.empty:
+                # En móvil forzamos 2 columnas para que las fotos sean grandes
                 cols = st.columns(2)
                 for idx, (_, f_row) in enumerate(df_gal.iterrows()):
                     with cols[idx % 2]:
