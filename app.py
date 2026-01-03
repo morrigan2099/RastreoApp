@@ -88,7 +88,7 @@ with st.sidebar:
     ver_miniaturas = st.checkbox("📸 Ver Miniaturas en Mapa", value=True)
     
     st.markdown("---")
-    # EL BOTÓN MÁGICO
+    # BOTÓN DE MODO REPORTE
     modo_reporte = st.checkbox("📑 Activar Vista de Impresión (2 Páginas)", value=False)
     
     if st.button("🔄 Actualizar"): st.rerun()
@@ -97,60 +97,241 @@ if not sel_usuarios:
     st.stop()
 
 # ==========================================================
-# CSS MAESTRO (Print Rules + Page Break)
+# ESTILOS CSS (SEPARADOS PARA EVITAR ERRORES)
 # ==========================================================
-st.markdown(f"""
+
+# 1. CSS ESTÁTICO (No usa llaves dobles, es texto plano seguro)
+css_estatico = """
 <style>
-/* 1. LIMPIEZA INTERFAZ */
-.block-container {{
+/* LIMPIEZA INTERFAZ */
+.block-container {
     padding-top: 1rem !important;
     padding-bottom: 0rem !important;
     padding-left: 1rem !important;
     padding-right: 1rem !important;
     max-width: 100% !important;
-}}
-header[data-testid="stHeader"] {{ background: transparent !important; }}
-header[data-testid="stHeader"] button {{ color: var(--text-color) !important; z-index: 9999; }}
-[data-testid="stDecoration"] {{ display: none !important; }}
-footer {{ display: none !important; }}
+}
+header[data-testid="stHeader"] { background: transparent !important; }
+header[data-testid="stHeader"] button { color: var(--text-color) !important; z-index: 9999; }
+[data-testid="stDecoration"] { display: none !important; }
+footer { display: none !important; }
 
-/* 2. REGLAS DE IMPRESIÓN */
-@media print {{
-    @page {{ size: landscape; margin: 0.5cm; }}
-    [data-testid="stSidebar"] {{ display: none !important; }}
-    header, footer {{ display: none !important; }}
-    .stApp {{ margin: 0 !important; }}
-    body {{ -webkit-print-color-adjust: exact; background-color: white !important; color: black !important; }}
+/* REGLAS DE IMPRESIÓN GENERALES */
+@media print {
+    @page { size: landscape; margin: 0.5cm; }
+    [data-testid="stSidebar"] { display: none !important; }
+    header, footer { display: none !important; }
+    .stApp { margin: 0 !important; }
+    body { -webkit-print-color-adjust: exact; background-color: white !important; color: black !important; }
     
-    /* CLASE CLAVE PARA EL CORTE DE HOJA */
-    .page-break {{ 
+    /* CORTE DE PÁGINA */
+    .page-break { 
         page-break-before: always !important; 
         break-before: page !important; 
         display: block; 
         height: 0; 
         margin: 0;
-    }}
-}}
+    }
+}
 
-/* 3. TÍTULO */
-.title-container {{
+/* TÍTULO BASE */
+.title-container {
     display: flex;
     align-items: center;
     margin-bottom: 10px;
     margin-left: 0px;
     color: var(--text-color);
-}}
-.title-emoji {{
-    font-size: {'80px' if modo_reporte else 'clamp(50px, 14vw, 75px)'};
+}
+.title-emoji {
     margin-right: 15px;
     line-height: 1;
-}}
-.title-text-block {{ display: flex; flex-direction: column; justify-content: center; }}
-.title-main {{
+}
+.title-text-block { display: flex; flex-direction: column; justify-content: center; }
+.title-main {
     font-weight: 900;
-    font-size: {'48px' if modo_reporte else 'clamp(28px, 8vw, 42px)'};
     line-height: 1.0;
     text-transform: uppercase;
-}}
-.title-sub {{
+}
+.title-sub {
     font-weight: 600;
+    line-height: 1.1;
+    opacity: 0.8;
+}
+
+/* GALERÍA */
+.gallery-container {
+    display: flex;
+    flex-wrap: wrap;
+    margin: 0 -4px;
+    justify-content: flex-start;
+}
+.gallery-item {
+    box-sizing: border-box;
+    padding: 4px;
+}
+@media (max-width: 768px) {
+    .gallery-item { width: 50% !important; } 
+}
+
+.photo-card {
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    background-color: #f0f2f6;
+    overflow: hidden;
+    height: 210px;
+    display: flex; flex-direction: column;
+}
+.photo-card img {
+    width: 100%; height: 185px; object-fit: contain; background-color: #ababb3;
+}
+.photo-caption {
+    height: 25px; background: #fff; color: #000; font-size: 10px; font-weight: 600;
+    display: flex; align-items: center; justify-content: center; border-top: 1px solid #ccc;
+}
+</style>
+"""
+
+# 2. CSS DINÁMICO (Aquí inyectamos las variables de Python)
+# Calculamos los valores antes para no ensuciar el f-string
+size_emoji = '80px' if modo_reporte else 'clamp(50px, 14vw, 75px)'
+size_main = '48px' if modo_reporte else 'clamp(28px, 8vw, 42px)'
+size_sub = '24px' if modo_reporte else 'clamp(16px, 5vw, 24px)'
+width_item = '16.66%' if modo_reporte else '25%'
+
+css_dinamico = f"""
+<style>
+.title-emoji {{ font-size: {size_emoji}; }}
+.title-main {{ font-size: {size_main}; }}
+.title-sub {{ font-size: {size_sub}; }}
+.gallery-item {{ width: {width_item}; }}
+</style>
+"""
+
+# Renderizamos ambos estilos juntos
+st.markdown(css_estatico + css_dinamico, unsafe_allow_html=True)
+
+# ==========================================================
+# LÓGICA DE DATOS
+# ==========================================================
+df_f = df[df["Usuario"].isin(sel_usuarios)].copy()
+stats_list = []
+all_coords = []
+
+# TÍTULO (HTML)
+html_titulo = """
+<div class="title-container">
+    <div class="title-emoji">🏃🏽‍♂️</div>
+    <div class="title-text-block">
+        <div class="title-main">Siguiendo-T</div>
+        <div class="title-sub">Monitor de Reparto</div>
+    </div>
+</div>
+"""
+
+# ==========================================================
+# RENDERIZADO: PÁGINA 1
+# ==========================================================
+
+# ENCABEZADO
+if modo_reporte:
+    col_head1, col_head2 = st.columns([2, 1])
+    with col_head1:
+        st.markdown(html_titulo, unsafe_allow_html=True)
+    with col_head2:
+        for i, nombre in enumerate(sel_usuarios):
+            u_data = df_f[df_f["Usuario"] == nombre]
+            dist_u = 0.0
+            coords = u_data[["Latitud", "Longitud"]].values.tolist()
+            all_coords.extend(coords)
+            if len(coords) > 1:
+                for k in range(len(coords)-1):
+                    dist_u += calcular_distancia(coords[k][0], coords[k][1], coords[k+1][0], coords[k+1][1])
+            stats_list.append({"Repartidor": nombre, "Fotos": u_data['url_limpia'].notna().sum(), "Dist.": f"{dist_u:.2f} km"})
+        
+        st.markdown("<br>", unsafe_allow_html=True) 
+        st.dataframe(pd.DataFrame(stats_list), use_container_width=True, hide_index=True)
+else:
+    st.markdown(html_titulo, unsafe_allow_html=True)
+    for i, nombre in enumerate(sel_usuarios):
+        u_data = df_f[df_f["Usuario"] == nombre]
+        dist_u = 0.0
+        coords = u_data[["Latitud", "Longitud"]].values.tolist()
+        all_coords.extend(coords)
+        if len(coords) > 1:
+            for k in range(len(coords)-1):
+                dist_u += calcular_distancia(coords[k][0], coords[k][1], coords[k+1][0], coords[k+1][1])
+        stats_list.append({"Repartidor": nombre, "Fotos": u_data['url_limpia'].notna().sum(), "Dist.": f"{dist_u:.2f} km"})
+
+# MAPA
+alto_mapa = 700 if modo_reporte else 250
+m = folium.Map(location=[df_f["Latitud"].mean(), df_f["Longitud"].mean()], zoom_start=15, zoom_control=False)
+
+if tipo_mapa == "Satélite":
+    folium.TileLayer(tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', attr='Esri').add_to(m)
+
+colores = ['#FF0000', '#00FF00', '#0000FF', '#FF00FF', '#FF8C00']
+
+for i, nombre in enumerate(sel_usuarios):
+    color = colores[i % len(colores)]
+    u_data = df_f[df_f["Usuario"] == nombre].reset_index(drop=True)
+    
+    if not u_data.empty:
+        coords = u_data[["Latitud", "Longitud"]].values.tolist()
+        
+        if len(coords) > 1:
+            linea = folium.PolyLine(coords, color=color, weight=4, opacity=0.8).add_to(m)
+            # Flechas
+            PolyLineTextPath(linea, '                    ▶                    ', repeat=True, offset=20, attributes={'fill': color, 'font-size': '12'}).add_to(m)
+
+        r_ini, r_fin = u_data.iloc[0], u_data.iloc[-1]
+        off = 0.00009 if (abs(r_ini["Latitud"] - r_fin["Latitud"]) < 0.00005) else 0
+        folium.Marker([r_ini["Latitud"], r_ini["Longitud"]], icon=folium.DivIcon(html='<div style="font-size:22pt;">📌</div>'), popup=f"Inicio: {r_ini['Hora']}").add_to(m)
+        folium.Marker([r_fin["Latitud"]+off, r_fin["Longitud"]+off], icon=folium.DivIcon(html='<div style="font-size:22pt;">🏁</div>'), popup=f"Fin: {r_fin['Hora']}").add_to(m)
+        
+        if ver_miniaturas:
+            for j, row in u_data.iterrows():
+                if row['url_limpia']:
+                    popup_html = f'<img src="{row["url_limpia"]}" style="max-width:220px; max-height:220px; object-fit:contain; border-radius:4px;">'
+                    folium.Marker([row["Latitud"], row["Longitud"]],
+                        icon=folium.DivIcon(html=f'<div style="width:30px; height:30px; border:2px solid {color}; background:white; border-radius:4px; overflow:hidden;"><img src="{row["url_limpia"]}" style="width:100%; height:100%; object-fit:cover;"></div>'),
+                        popup=folium.Popup(popup_html, max_width=230)).add_to(m)
+
+if all_coords:
+    m.fit_bounds(all_coords)
+
+st_folium(m, width="100%", height=alto_mapa, returned_objects=[])
+
+# ==========================================================
+# CORTE DE PÁGINA
+# ==========================================================
+if modo_reporte:
+    st.markdown('<div class="page-break"></div>', unsafe_allow_html=True)
+
+# ==========================================================
+# RENDERIZADO: PÁGINA 2 (GALERÍA)
+# ==========================================================
+
+if not modo_reporte:
+    st.markdown("### 📊 Estadísticas")
+    st.dataframe(pd.DataFrame(stats_list), use_container_width=True, hide_index=True)
+
+titulo_galeria = "**📸 Evidencias Fotográficas**" if modo_reporte else "### 📸 Evidencias"
+st.markdown(titulo_galeria)
+
+df_gal = df_f[df_f['url_limpia'].notna()]
+if not df_gal.empty:
+    html_parts = ['<div class="gallery-container">']
+    for _, row in df_gal.iterrows():
+        url = row['url_limpia']
+        user = str(row['Usuario']).split()[0].replace("<","").replace(">","")
+        hora = str(row['Hora'])[:5]
+        html_parts.append(f'<div class="gallery-item"><a href="{url}" target="_blank" style="text-decoration:none;"><div class="photo-card"><img src="{url}" loading="lazy"><div class="photo-caption">{user} {hora}</div></div></a></div>')
+    html_parts.append('</div>')
+    st.markdown("".join(html_parts), unsafe_allow_html=True)
+else:
+    st.info("Sin evidencias.")
+
+if not modo_reporte:
+    st.markdown("---")
+    if st.button("🚀 Archivar Día", type="primary"):
+        st.success("Completado")
