@@ -17,17 +17,37 @@ from folium.plugins import PolyLineTextPath
 # ==========================================================
 st.set_page_config(page_title="Monitor 🗞️", layout="wide")
 
-# Estilo CSS para forzar el título en una línea y ajustar visuales
+# --- CSS RESPONSIVO (Media Queries) ---
 st.markdown("""
     <style>
-    .reportview-container .main .block-container { padding-top: 1rem; }
-    .titulo-movil {
-        font-size: 22px !important;
+    /* --- CONFIGURACIÓN PARA ESCRITORIO (Por defecto) --- */
+    .titulo-dinamico {
+        font-size: 32px;
         font-weight: bold;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        margin-bottom: 10px;
+        margin-bottom: 20px;
+    }
+    
+    /* --- CONFIGURACIÓN PARA MÓVIL (Pantallas menores a 800px) --- */
+    @media only screen and (max-width: 800px) {
+        .titulo-dinamico {
+            font-size: 18px !important;
+            white-space: nowrap !important;
+            margin-bottom: 10px !important;
+        }
+        /* Forzar 2 columnas en la galería */
+        [data-testid="column"] {
+            width: 48% !important;
+            flex: 1 1 45% !important;
+            min-width: 45% !important;
+        }
+        /* Ajustar espaciado de bloques horizontales */
+        [data-testid="stHorizontalBlock"] {
+            gap: 5px !important;
+        }
+        /* Reducir espacio superior */
+        .block-container {
+            padding-top: 1rem !important;
+        }
     }
     </style>
     """, unsafe_allow_html=True)
@@ -85,10 +105,9 @@ def calcular_distancia(lat1, lon1, lat2, lon2):
 # ==========================================================
 # UI - MONITOR 🗞️
 # ==========================================================
-# Título pequeño en una sola línea
-st.markdown('<div class="titulo-movil">🗞️ Monitor de Reparto Folletos</div>', unsafe_allow_html=True)
+st.markdown('<div class="titulo-dinamico">🗞️ Monitor de Reparto Folletos</div>', unsafe_allow_html=True)
 
-tab1, tab2 = st.tabs(["📍 Mapa", "☁️ Cierre"])
+tab1, tab2 = st.tabs(["📍 Mapa en Vivo", "☁️ Cierre del Día"])
 
 with tab1:
     records = table.all()
@@ -137,11 +156,10 @@ with tab1:
                 # RUTA
                 if len(coords) > 1:
                     linea = folium.PolyLine(coords, color=color, weight=4, opacity=0.8).add_to(m)
-                    PolyLineTextPath(linea, '                                ►                                ', 
+                    PolyLineTextPath(linea, '                ►                ', 
                                      repeat=True, offset=8, 
                                      attributes={'fill': color, 'font-weight': 'bold', 'font-size': '22', 'stroke': 'black', 'stroke-width': '1'}).add_to(m)
 
-                # PINES Y MINIATURAS
                 ult_hito = None
                 for j, row in u_data.iterrows():
                     if j < len(u_data) - 1:
@@ -166,40 +184,38 @@ with tab1:
                             popup=folium.Popup(f'<img src="{row["url_limpia"]}" width="150">', max_width=150)
                         ).add_to(m)
 
-                # INICIO Y FIN
                 r_ini, r_fin = u_data.iloc[0], u_data.iloc[-1]
                 mismo_sitio = (abs(r_ini["Latitud"] - r_fin["Latitud"]) < 0.00005)
                 off = 0.00009 if mismo_sitio else 0
 
                 folium.Marker([r_ini["Latitud"], r_ini["Longitud"]], 
-                    icon=folium.DivIcon(html=f'<div style="font-size:22pt; filter: drop-shadow(2px 2px 2px black);">📌</div>'),
+                    icon=folium.DivIcon(html=f'<div style="text-align:center;"><div style="font-size:22pt; filter: drop-shadow(2px 2px 2px black);">📌</div></div>'),
                     z_index_offset=2000).add_to(m)
                 
                 folium.Marker([r_fin["Latitud"] + off, r_fin["Longitud"] + off], 
-                    icon=folium.DivIcon(html=f'<div style="font-size:22pt; filter: drop-shadow(2px 2px 2px black);">🏁</div>'),
+                    icon=folium.DivIcon(html=f'<div style="text-align:center;"><div style="font-size:22pt; filter: drop-shadow(2px 2px 2px black);">🏁</div></div>'),
                     z_index_offset=2000).add_to(m)
 
                 resumen_jornada.append({
-                    "Repartidor": nombre, "Evid.": u_data['url_limpia'].notna().sum(), "Dist.": f"{dist_u:.2f} km"
+                    "Repartidor": nombre, "📸": u_data['url_limpia'].notna().sum(), "Dist.": f"{dist_u:.2f} km"
                 })
 
         m.fit_bounds(df_f[["Latitud", "Longitud"]].values.tolist())
-        st_folium(m, width="100%", height=400, returned_objects=[])
+        # Mapa con altura balanceada
+        st_folium(m, width="100%", height=450, returned_objects=[])
 
         if modo_reporte:
             st.markdown("---")
-            # Resumen ultra compacto para móvil
-            st.write("**📊 Resumen Rápido**")
+            st.write("**📊 Resumen de Jornada**")
             st.dataframe(pd.DataFrame(resumen_jornada), use_container_width=True, hide_index=True)
             
-            st.write("**📸 Galería de Evidencias (Toca para ampliar)**")
+            st.write("**📸 Galería (Toca para ampliar)**")
             df_gal = df_f[df_f['url_limpia'].notna()]
             if not df_gal.empty:
-                # Grid de 2 columnas
-                cols = st.columns(2)
+                # Usamos 4 columnas. El CSS se encargará de que en móvil se vean como 2.
+                cols = st.columns(4)
                 for idx, (_, f_row) in enumerate(df_gal.iterrows()):
-                    with cols[idx % 2]:
-                        # Streamlit permite ampliar la imagen a pantalla completa por defecto al hacer clic
+                    with cols[idx % 4]:
                         st.image(f_row['url_limpia'], caption=f"{f_row['Usuario']} {f_row['Hora'][:5]}", use_container_width=True)
 
 with tab2:
