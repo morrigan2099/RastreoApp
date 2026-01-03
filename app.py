@@ -17,44 +17,43 @@ from folium.plugins import PolyLineTextPath
 # ==========================================================
 st.set_page_config(page_title="Monitor 🗞️", layout="wide")
 
-# --- CSS MAESTRO: MODO OSCURO + MARGENES ---
+# --- CSS RESPONSIVO AVANZADO ---
 st.markdown("""
     <style>
-    /* Ocultar fondo del header pero mantener botones */
-    header[data-testid="stHeader"] {
-        background: rgba(0,0,0,0) !important;
-    }
-    
-    /* Forzar color del botón de Sidebar según el tema */
-    header[data-testid="stHeader"] button {
-        color: var(--text-color) !important;
-    }
-    
+    /* Ocultar elementos de Streamlit */
+    header[data-testid="stHeader"] { background: rgba(0,0,0,0) !important; }
+    header[data-testid="stHeader"] button { color: var(--text-color) !important; }
     footer {visibility: hidden;}
     [data-testid="stDecoration"] {display:none;}
-    
-    /* Título Responsivo y Adaptable al Tema */
-    .titulo-texto { 
-        font-weight: bold; 
-        color: inherit; /* Hereda el color del tema (Blanco o Negro) */
-        font-size: 20px;
+    .block-container { padding-top: 2rem !important; }
+
+    /* Título que se adapta al ancho de pantalla (Viewport Width) */
+    .titulo-placeholder {
+        width: 100%;
+        text-align: left;
+        margin-left: 35px;
+        font-weight: bold;
+        white-space: nowrap;
+        overflow: hidden;
+        /* font-size: 5.5vw ajusta el texto al ancho del móvil */
+        font-size: clamp(16px, 5.5vw, 28px);
+        color: var(--text-color);
     }
 
-    /* Ajustes específicos para Móvil */
+    /* FORZAR GRID DE 2 COLUMNAS EN MÓVIL (A prueba de balas) */
     @media (max-width: 768px) {
-        .block-container { 
-            padding-top: 25px !important; /* Baja el contenido 25px */
-        }
-        [data-testid="stHorizontalBlock"] {
+        div[data-testid="stHorizontalBlock"] {
+            display: flex !important;
             flex-direction: row !important;
             flex-wrap: wrap !important;
+            align-items: flex-start !important;
         }
-        [data-testid="column"] {
-            width: calc(50% - 10px) !important;
-            flex: 1 1 calc(50% - 10px) !important;
-            min-width: calc(50% - 10px) !important;
+        div[data-testid="column"] {
+            width: calc(50% - 8px) !important; /* Fuerza 2 por fila */
+            flex: 1 1 calc(50% - 8px) !important;
+            min-width: calc(50% - 8px) !important;
+            margin-bottom: 10px !important;
         }
-        .titulo-texto { font-size: 16px; white-space: nowrap; }
     }
     </style>
     """, unsafe_allow_html=True)
@@ -110,10 +109,10 @@ def calcular_distancia(lat1, lon1, lat2, lon2):
 # ==========================================================
 # UI - MONITOR 🗞️
 # ==========================================================
-# Título con margen superior y color dinámico
-st.markdown('<div style="margin-top: 15px; margin-left: 40px;"><span class="titulo-texto">🗞️ Monitor Reparto Folletos</span></div>', unsafe_allow_html=True)
+# Placeholder de título dinámico
+st.markdown('<div class="titulo-placeholder">🗞️ Monitor de Reparto Folletos</div>', unsafe_allow_html=True)
 
-tab1, tab2 = st.tabs(["📍 Mapa", "☁️ Cierre"])
+tab1, tab2 = st.tabs(["📍 Mapa de Ruta", "☁️ Cierre de Jornada"])
 
 with tab1:
     records = table.all()
@@ -131,11 +130,11 @@ with tab1:
     df["Longitud"] = pd.to_numeric(df["Longitud"], errors="coerce")
     df = df.dropna(subset=["Latitud", "Longitud"])
     df["Usuario"] = df["Usuario"].astype(str).str.strip()
-    df["Hora_dt"] = pd.to_datetime(df["Hora"], errors="coerce")
+    df["Hora_dt"] = pd.to_datetime(df["Hora"], format='%H:%M:%S', errors="coerce")
     df["url_limpia"] = df["Foto"].apply(obtener_url_final)
 
     with st.sidebar:
-        st.header("⚙️ Config")
+        st.header("⚙️ Filtros")
         usuarios_lista = sorted(df["Usuario"].unique().tolist())
         sel_usuarios = st.multiselect("Repartidores", usuarios_lista, default=usuarios_lista)
         tipo_mapa = st.radio("Capa", ["Calle", "Satélite"])
@@ -170,7 +169,7 @@ with tab1:
                         dist_u += calcular_distancia(row["Latitud"], row["Longitud"], p_next["Latitud"], p_next["Longitud"])
 
                     if ult_hito is None or (row["Hora_dt"] - ult_hito).total_seconds() >= 900:
-                        folium.Marker([row["Latitud"], row["Longitud"]], icon=folium.DivIcon(html=f'<div style="text-align:center;"><div style="font-size:18pt; filter: drop-shadow(1px 1px 2px black);">📍</div></div>'), z_index_offset=1000).add_to(m)
+                        folium.Marker([row["Latitud"], row["Longitud"]], icon=folium.DivIcon(html=f'<div style="text-align:center;"><div style="font-size:20pt; filter: drop-shadow(1px 1px 2px black);">📍</div></div>'), z_index_offset=1000).add_to(m)
                         ult_hito = row["Hora_dt"]
 
                     if row['url_limpia']:
@@ -189,16 +188,19 @@ with tab1:
 
                 resumen_jornada.append({"Repartidor": nombre, "📸": u_data['url_limpia'].notna().sum(), "Dist.": f"{dist_u:.2f} km"})
 
-        m.fit_bounds(df_f[["Latitud", "Longitud"]].values.tolist())
         st_folium(m, width="100%", height=450, returned_objects=[])
 
         st.markdown("---")
         st.write("**📊 Resumen**")
         st.dataframe(pd.DataFrame(resumen_jornada), use_container_width=True, hide_index=True)
         
-        st.write("**📸 Evidencias (Toca para ampliar)**")
-        df_gal = df_f[df_f['url_limpia'].notna()]
+        st.write("**📸 Evidencias (Orden Cronológico)**")
+        # --- FILTRO Y ORDEN CRONOLÓGICO ---
+        df_gal = df_f[df_f['url_limpia'].notna()].sort_values("Hora_dt")
+        
         if not df_gal.empty:
+            # En escritorio st.columns(4) funciona bien.
+            # En móvil, el CSS inyectado arriba forzará que esto se vea como 2 columnas.
             cols = st.columns(4) 
             for i, (_, row) in enumerate(df_gal.iterrows()):
                 with cols[i % 4]:
