@@ -1,3 +1,6 @@
+# ==========================================================
+# IMPORTS
+# ==========================================================
 import streamlit as st
 import pandas as pd
 from pyairtable import Api
@@ -7,11 +10,18 @@ import cloudinary
 import cloudinary.uploader
 import json
 import folium
+import math
 from streamlit_folium import st_folium
+from folium.plugins import PolyLineTextPath
 
-# --- 1. CONFIGURACIÓN DE PÁGINA ---
+# ==========================================================
+# CONFIGURACIÓN DE PÁGINA
+# ==========================================================
 st.set_page_config(page_title="Monitor de Reparto Pro", layout="wide")
 
+# ==========================================================
+# CREDENCIALES (USA LAS TUYAS)
+# ==========================================================
 # ==========================================
 # 🔐 ZONA DE CONFIGURACIÓN
 # ==========================================
@@ -47,329 +57,199 @@ GOOGLE_JSON_RAW = """
 # 4. ADMIN
 EMAIL_ADMIN = "morrigan2099@gmail.com"
 
-# ==========================================
-# 🔌 CONEXIÓN A SERVICIOS
-# ==========================================
-try:
-    if "REEMPLAZA" in GOOGLE_JSON_RAW or len(GOOGLE_JSON_RAW) < 50:
-        st.error("⚠️ Falta pegar el JSON de Google en la variable GOOGLE_JSON_RAW.")
-        st.stop()
-        
-    json_limpio = GOOGLE_JSON_RAW.replace('\xa0', ' ').replace('\\\n', '\\n')
-    
-    google_creds_dict = json.loads(json_limpio, strict=False)
-    scopes = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
-    creds = Credentials.from_service_account_info(google_creds_dict, scopes=scopes)
-    gc = gspread.authorize(creds)
+# ==========================================================
+# CONEXIONES
+# ==========================================================
+api = Api(AIRTABLE_API_KEY)
+table = api.table(AIRTABLE_BASE_ID, AIRTABLE_TABLE_NAME)
 
-    api = Api(AIRTABLE_API_KEY)
-    table = api.table(AIRTABLE_BASE_ID, AIRTABLE_TABLE_NAME)
-    
-    cloudinary.config( 
-        cloud_name = CLOUDINARY_CLOUD_NAME, 
-        api_key = CLOUDINARY_API_KEY, 
-        api_secret = CLOUDINARY_API_SECRET,
-        secure = True
-    )
+google_creds = json.loads(GOOGLE_JSON_RAW)
+creds = Credentials.from_service_account_info(
+    google_creds,
+    scopes=[
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive"
+    ]
+)
+gc = gspread.authorize(creds)
 
-except json.JSONDecodeError as e:
-    st.error(f"Error de formato JSON: {e}")
-    st.stop()
-except Exception as e:
-    st.error(f"Error de conexión general: {e}")
-    st.stop()
+cloudinary.config(
+    cloud_name=CLOUDINARY_CLOUD_NAME,
+    api_key=CLOUDINARY_API_KEY,
+    api_secret=CLOUDINARY_API_SECRET,
+    secure=True
+)
 
-# ==========================================
-# 📱 INTERFAZ DE USUARIO
-# ==========================================
-
-st.title("🚚 Monitor de Reparto & Cloudinary")
-
-tab1, tab2 = st.tabs(["📍 En Vivo (Mapa Dinámico)", "☁️ Procesar y Archivar"])
-
-# ------------------------------------------
-# PESTAÑA 1: MAPA DINÁMICO + RUTA
-# ------------------------------------------
-with tab1:
-    col_kpi, col_btn = st.columns([4,1])
-    with col_btn:
-        if st.button("🔄 Refrescar"):
-            st.rerun()
-
-    try:
-        records = table.all()
-    except Exception as e:
-        st.error(f"Error leyendo Airtable: {e}")
-        records = []
-
-    if records:
-        data = [r['fields'] for r in records]
-        df = pd.DataFrame(data)
-        
-        # --- NORMALIZACIÓN DE NOMBRES ---
-        df.columns = [c.lower() for c in df.columns]
-        
-        rename_map = {}
-        for col in df.columns:
-            if 'lat' in col: rename_map[col] = 'Latitud'
-            if 'lon' in col: rename_map[col] = 'Longitud'
-            if 'usu' in col: rename_map[col] = 'Usuario'
-            if 'tipo' in col: rename_map[col] = 'Tipo'
-            if 'foto' in col and 'etiq' not in col: rename_map[col] = 'Foto'
-            if 'etiq' in col: rename_map[col] = 'Etiqueta_Foto'
-            if 'fecha' in col: rename_map[col] = 'Fecha'
-            if 'hora' in col: rename_map[col] = 'Hora'
-            if 'zona' in col: rename_map[col] = 'Zona'
-            
-        df = df.rename(columns=rename_map)
-
-        if 'Tipo' not in df.columns: df['Tipo'] = 'GPS'
-
-        df_gps = df[df['Tipo'] != 'FOTO'].copy()
-        df_fotos = df[df['Tipo'] == 'FOTO'].copy()
-        
-        st.metric("📦 Paquetes/Evidencias hoy", len(df_fotos))
-        
-import math
-import pandas as pd
-import streamlit as st
-import folium
-import re
-from streamlit_folium import st_folium
-from folium.plugins import PolyLineTextPath
-
-# --- 1. EXTRACCIÓN MAESTRA (Especial para el formato de tu CSV) ---
-def obtener_url_final(valor):
-    if not valor or str(valor).lower() in ['nan', 'none', '', '[]']:
-        return None
-    val_str = str(valor).strip()
-    # Busca cualquier cosa que empiece con http dentro de paréntesis
-    if '(' in val_str and ')' in val_str:
-        enlaces = re.findall(r'\((https?://[^\)]+)\)', val_str)
-        if enlaces: return enlaces[0]
-    # Si es el link directo
-    if val_str.startswith('http'):
-        return val_str
+# ==========================================================
+# FUNCIONES CLAVE
+# ==========================================================
+def obtener_url_airtable(valor):
+    if isinstance(valor, list) and len(valor) > 0:
+        return valor[0].get("url")
     return None
 
-def calcular_distancia_real(lat1, lon1, lat2, lon2):
-    R = 6371.0
-    dlat, dlon = math.radians(lat2 - lat1), math.radians(lon2 - lon1)
-    a = math.sin(dlat / 2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2)**2
-    return R * (2 * math.atan2(math.sqrt(a), math.sqrt(1 - a)))
+def calcular_distancia(lat1, lon1, lat2, lon2):
+    R = 6371
+    dlat, dlon = math.radians(lat2-lat1), math.radians(lon2-lon1)
+    a = math.sin(dlat/2)**2 + math.cos(math.radians(lat1)) * \
+        math.cos(math.radians(lat2)) * math.sin(dlon/2)**2
+    return R * (2 * math.atan2(math.sqrt(a), math.sqrt(1-a)))
 
-# --- SECCIÓN 4: MAPA Y REPORTE ---
-if not df_gps.empty:
-    st.markdown("---")
-    
-    # Nombres de columnas
-    c_lat, c_lon = "Latitud", "Longitud"
-    c_user, c_hora = "Usuario", "Hora"
-    c_foto, c_etiqueta = "Foto", "Etiqueta_Foto"
+# ==========================================================
+# UI
+# ==========================================================
+st.title("🚚 Monitor de Reparto & Evidencias")
 
-    # --- LIMPIEZA DE DATOS (ELIMINA EL ERROR DE ESPACIOS) ---
-    df_gps[c_user] = df_gps[c_user].astype(str).str.strip() # Limpia "Morrisitou " -> "Morrisitou"
-    df_gps[c_lat] = pd.to_numeric(df_gps[c_lat], errors='coerce')
-    df_gps[c_lon] = pd.to_numeric(df_gps[c_lon], errors='coerce')
-    df_gps = df_gps.dropna(subset=[c_lat, c_lon])
-    
-    # Procesar URLs de fotos
-    df_gps['url_limpia'] = df_gps[c_foto].apply(obtener_url_final)
-    
-    # Formatear Horas
-    df_gps['hora_dt'] = pd.to_datetime(df_gps[c_hora], format='%H:%M:%S', errors='coerce').dt.time
+tab1, tab2 = st.tabs(["📍 En Vivo", "☁️ Cierre del Día"])
+
+# ==========================================================
+# PESTAÑA 1 — MAPA + GALERÍA
+# ==========================================================
+with tab1:
+
+    if st.button("🔄 Refrescar"):
+        st.rerun()
+
+    records = table.all()
+    if not records:
+        st.warning("No hay datos")
+        st.stop()
+
+    df = pd.DataFrame([r["fields"] for r in records])
+    df.columns = [c.lower() for c in df.columns]
+
+    rename = {}
+    for c in df.columns:
+        if "lat" in c: rename[c] = "Latitud"
+        if "lon" in c: rename[c] = "Longitud"
+        if "usu" in c: rename[c] = "Usuario"
+        if "hora" in c: rename[c] = "Hora"
+        if "foto" in c and "etiq" not in c: rename[c] = "Foto"
+        if "etiq" in c: rename[c] = "Etiqueta"
+        if "tipo" in c: rename[c] = "Tipo"
+
+    df = df.rename(columns=rename)
+
+    df["Latitud"] = pd.to_numeric(df["Latitud"], errors="coerce")
+    df["Longitud"] = pd.to_numeric(df["Longitud"], errors="coerce")
+    df = df.dropna(subset=["Latitud", "Longitud"])
+
+    df["Usuario"] = df["Usuario"].astype(str).str.strip()
+    df["Hora_dt"] = pd.to_datetime(df["Hora"], errors="coerce").dt.time
+
+    df["url_foto"] = df["Foto"].apply(obtener_url_airtable)
+    df["es_foto"] = df["url_foto"].notna()
 
     with st.sidebar:
-        st.header("⚙️ Configuración")
-        tipo_mapa = st.radio("Vista", ["Calle", "Satélite"])
-        modo_reporte = st.checkbox("📑 Activar Modo Reporte", value=True)
-        usuarios_lista = sorted(df_gps[c_user].unique().tolist())
-        sel_usuarios = st.multiselect("Repartidores", usuarios_lista, default=usuarios_lista)
+        usuarios = sorted(df["Usuario"].unique())
+        sel_usuarios = st.multiselect("Repartidores", usuarios, default=usuarios)
+        tipo_mapa = st.radio("Mapa", ["Calle", "Satélite"])
+        mostrar_galeria = st.checkbox("📸 Mostrar Galería", True)
 
-    df_f = df_gps[df_gps[c_user].isin(sel_usuarios)].copy()
+    df = df[df["Usuario"].isin(sel_usuarios)]
 
-    if not df_f.empty:
-        # Métrica de fotos encontradas
-        fotos_totales = df_f['url_limpia'].notna().sum()
-        st.metric("📦 Evidencias en esta selección", fotos_totales)
+    st.metric("📍 Registros", len(df))
+    st.metric("📸 Evidencias", df["es_foto"].sum())
 
-        # Crear Mapa
-        m = folium.Map(location=[df_f[c_lat].mean(), df_f[c_lon].mean()], zoom_start=15, zoom_control=False)
-        
-        if tipo_mapa == "Satélite":
-            folium.TileLayer(tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', attr='Esri').add_to(m)
-        else:
-            folium.TileLayer('OpenStreetMap').add_to(m)
+    m = folium.Map(
+        location=[df["Latitud"].mean(), df["Longitud"].mean()],
+        zoom_start=14,
+        zoom_control=False
+    )
 
-        colores = ['#FF0000', '#00FF00', '#0000FF', '#FF00FF', '#FF8C00']
-        resumen_final = []
+    if tipo_mapa == "Satélite":
+        folium.TileLayer(
+            tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+            attr="Esri"
+        ).add_to(m)
+    else:
+        folium.TileLayer("OpenStreetMap").add_to(m)
 
-        for i, nombre in enumerate(sel_usuarios):
-            color = colores[i % len(colores)]
-            u_data = df_f[df_f[c_user] == nombre].sort_values('hora_dt').reset_index(drop=True)
-            dist_total = 0.0
-            
-            if not u_data.empty:
-                coords = u_data[[c_lat, c_lon]].values.tolist()
-                
-                # 1. RUTA (Glow Negro + Color)
-                if len(coords) > 1:
-                    folium.PolyLine(coords, color='black', weight=7, opacity=0.3).add_to(m)
-                    linea = folium.PolyLine(coords, color=color, weight=3).add_to(m)
-                    PolyLineTextPath(linea, '     ►     ', repeat=True, offset=8, 
-                                     attributes={'fill': color, 'font-weight': 'bold', 'font-size': '20'}).add_to(m)
+    colores = ["red", "blue", "green", "purple", "orange"]
 
-                # 2. MARCADORES
-                ult_hito = None
-                for j in range(len(u_data)):
-                    row = u_data.iloc[j]
-                    
-                    # Sumar KM
-                    if j < len(u_data) - 1:
-                        p2 = u_data.iloc[j+1]
-                        dist_total += calcular_distancia_real(row[c_lat], row[c_lon], p2[c_lat], p2[c_lon])
+    for i, usuario in enumerate(sel_usuarios):
+        color = colores[i % len(colores)]
+        u = df[df["Usuario"] == usuario].sort_values("Hora_dt")
 
-                    # Hitos cada 15 min 📍
-                    h_actual = row['hora_dt']
-                    if ult_hito is None or h_actual.minute % 15 == 0: # Simplificado para hito visual
-                         if ult_hito != h_actual.minute:
-                            folium.Marker([row[c_lat], row[c_lon]], icon=folium.DivIcon(html=f'''
-                                <div style="text-align:center;">
-                                    <div style="font-size:16pt; filter: drop-shadow(1px 1px 2px black);">📍</div>
-                                    <div style="font-size:8pt; color:white; background:rgba(0,0,0,0.8); padding:2px; border-radius:3px;">{str(h_actual)[:5]}</div>
-                                </div>''')).add_to(m)
-                            ult_hito = h_actual.minute
+        coords = u[["Latitud", "Longitud"]].values.tolist()
 
-                    # 3. FOTOS (Miniaturas)
-                    if row['url_limpia']:
-                        folium.Marker(
-                            [row[c_lat], row[c_lon]],
-                            icon=folium.DivIcon(html=f'''
-                                <div style="width:50px; height:50px; border:2px solid {color}; background:white; box-shadow:3px 3px 6px black; border-radius:4px; overflow:hidden;">
-                                    <img src="{row['url_limpia']}" width="46" height="46" style="object-fit:cover;">
-                                </div>'''),
-                            popup=folium.Popup(f'<img src="{row["url_limpia"]}" width="250">', max_width=250)
-                        ).add_to(m)
+        if len(coords) > 1:
+            folium.PolyLine(coords, color="black", weight=6, opacity=0.3).add_to(m)
+            linea = folium.PolyLine(coords, color=color, weight=3).add_to(m)
+            PolyLineTextPath(linea, " ► ", repeat=True, offset=7).add_to(m)
 
-                # 4. EXTREMOS
-                r_ini, r_fin = u_data.iloc[0], u_data.iloc[-1]
-                folium.Marker([r_ini[c_lat], r_ini[c_lon]], icon=folium.DivIcon(html='<div style="font-size:26pt; filter: drop-shadow(2px 2px 3px black);">📌</div>')).add_to(m)
-                folium.Marker([r_fin[c_lat], r_fin[c_lon]], icon=folium.DivIcon(html='<div style="font-size:26pt; filter: drop-shadow(2px 2px 3px black);">🏁</div>')).add_to(m)
+        for _, r in u.iterrows():
 
-                resumen_final.append({"Repartidor": nombre, "Salida": r_ini[c_hora], "Llegada": r_fin[c_hora], "Distancia": f"{dist_total:.2f} km"})
+            if r["url_foto"]:
+                folium.Marker(
+                    [r["Latitud"], r["Longitud"]],
+                    icon=folium.DivIcon(html=f"""
+                    <div style="width:50px;height:50px;border:2px solid {color};
+                                background:white;box-shadow:2px 2px 5px black;
+                                border-radius:4px;overflow:hidden">
+                        <img src="{r['url_foto']}" width="46" height="46" style="object-fit:cover">
+                    </div>
+                    """),
+                    popup=folium.Popup(f'<img src="{r["url_foto"]}" width="250">')
+                ).add_to(m)
 
-        st_folium(m, width="100%", height=700, returned_objects=[])
+    st_folium(m, height=700, width="100%")
 
-        if modo_reporte:
-            st.write("### 📸 Galería de Testigos")
-            df_galeria = df_f[df_f['url_limpia'].notna()]
-            if not df_galeria.empty:
-                cols = st.columns(4)
-                for idx, (_, f_row) in enumerate(df_galeria.iterrows()):
-                    with cols[idx % 4]:
-                        st.image(f_row['url_limpia'], caption=f"{f_row[c_user]} ({f_row[c_hora]})")
-              
-# ------------------------------------------
-# PESTAÑA 2: MOTOR DE MIGRACIÓN
-# ------------------------------------------
+    if mostrar_galeria:
+        st.subheader("📸 Galería de Evidencias")
+        gal = df[df["url_foto"].notna()]
+        cols = st.columns(4)
+        for i, (_, r) in enumerate(gal.iterrows()):
+            with cols[i % 4]:
+                st.image(r["url_foto"], caption=f"{r['Usuario']} – {r['Hora']}")
+
+# ==========================================================
+# PESTAÑA 2 — CLOUDINARY + GOOGLE SHEETS
+# ==========================================================
 with tab2:
-    st.header("🗃️ Cierre del Día: Migración a Cloudinary")
-    
-    if st.button("🚀 INICIAR PROCESAMIENTO Y ARCHIVADO", type="primary"):
+
+    st.header("☁️ Cierre del Día")
+
+    if st.button("🚀 Procesar y Archivar", type="primary"):
+
         records = table.all()
-        
-        if not records:
-            st.warning("No hay datos en Airtable.")
-        else:
-            bar = st.progress(0)
-            status = st.status("Iniciando motor...", expanded=True)
-            
-            data = [r['fields'] for r in records]
-            df = pd.DataFrame(data)
-            
-            # Normalización para guardado
-            df.columns = [c.lower() for c in df.columns]
-            rename_map_save = {}
-            for col in df.columns:
-                if 'fecha' in col: rename_map_save[col] = 'Fecha'
-                if 'usu' in col: rename_map_save[col] = 'Usuario'
-                if 'hora' in col: rename_map_save[col] = 'Hora'
-                if 'tipo' in col: rename_map_save[col] = 'Tipo'
-                if 'foto' in col and 'etiq' not in col: rename_map_save[col] = 'Foto'
-                if 'etiq' in col: rename_map_save[col] = 'Etiqueta_Foto'
-                if 'lat' in col: rename_map_save[col] = 'Latitud'
-                if 'lon' in col: rename_map_save[col] = 'Longitud'
-                if 'zona' in col: rename_map_save[col] = 'Zona'
-            
-            df = df.rename(columns=rename_map_save)
+        df = pd.DataFrame([r["fields"] for r in records])
 
-            fecha = df['Fecha'].iloc[0] if 'Fecha' in df.columns else "General"
-            nombre_libro = f"Reparto_{fecha}"
-            
+        df["url_foto"] = df["Foto"].apply(obtener_url_airtable)
+
+        fecha = pd.to_datetime(df.get("Fecha", pd.Timestamp.now())).astype(str).iloc[0]
+        libro = f"Reparto_{fecha}"
+
+        try:
+            sh = gc.open(libro)
+        except:
+            sh = gc.create(libro)
+            sh.share(EMAIL_ADMIN, perm_type="user", role="writer")
+
+        for usuario in df["Usuario"].unique():
+            df_u = df[df["Usuario"] == usuario]
+
+            def subir(row):
+                if not row["url_foto"]:
+                    return ""
+                res = cloudinary.uploader.upload(
+                    row["url_foto"],
+                    folder="repartos_evidencia",
+                    format="webp"
+                )
+                return res["secure_url"]
+
+            df_u["Cloudinary"] = df_u.apply(subir, axis=1)
+
             try:
-                sh = gc.open(nombre_libro)
-                status.write(f"📂 Libro encontrado: {nombre_libro}")
-            except gspread.exceptions.SpreadsheetNotFound:
-                sh = gc.create(nombre_libro)
-                sh.share(EMAIL_ADMIN, perm_type='user', role='writer')
-                status.write(f"✨ Libro CREADO: {nombre_libro}")
-            
-            if 'Usuario' in df.columns:
-                usuarios = df['Usuario'].unique()
-            else:
-                usuarios = ["Desconocido"]
+                ws = sh.add_worksheet(title=usuario, rows=1000, cols=10)
+            except:
+                ws = sh.worksheet(usuario)
 
-            total_pasos = len(records)
-            pasos_completados = 0
+            ws.append_row(list(df_u.columns))
+            ws.append_rows(df_u.values.tolist())
 
-            for usuario in usuarios:
-                status.write(f"🔄 Procesando: **{usuario}**")
-                
-                if 'Usuario' in df.columns:
-                    df_u = df[df['Usuario'] == usuario].copy()
-                else:
-                    df_u = df.copy()
-                
-                def procesar_imagen_cloudinary(row):
-                    if row.get('Tipo') != 'FOTO' or 'Foto' not in row or not isinstance(row['Foto'], list):
-                        return ""
-                    try:
-                        airtable_url = row['Foto'][0]['url']
-                        nombre_archivo = f"{fecha}_{usuario}_{str(row.get('Hora','')).replace(':','')}"
-                        
-                        res = cloudinary.uploader.upload(
-                            airtable_url, 
-                            public_id=nombre_archivo,
-                            folder="repartos_evidencia",
-                            format="webp"
-                        )
-                        return res['secure_url']
-                    except Exception as e:
-                        return f"Error: {e}"
+        table.batch_delete([r["id"] for r in records])
 
-                df_u['Foto_Link_Cloudinary'] = df_u.apply(procesar_imagen_cloudinary, axis=1)
-                
-                cols = ['Hora', 'Tipo', 'Etiqueta_Foto', 'Latitud', 'Longitud', 'Zona', 'Foto_Link_Cloudinary']
-                for c in cols:
-                    if c not in df_u.columns: df_u[c] = ""
-                
-                datos_finales = df_u[cols].values.tolist()
-                
-                try:
-                    ws = sh.add_worksheet(title=str(usuario), rows=1000, cols=10)
-                    ws.append_row(cols)
-                except:
-                    ws = sh.worksheet(str(usuario))
-                
-                ws.append_rows(datos_finales)
-                pasos_completados += len(df_u)
-                bar.progress(min(pasos_completados / total_pasos, 1.0))
-
-            status.write("🗑️ Limpiando Airtable...")
-            ids = [r['id'] for r in records]
-            table.batch_delete(ids)
-            
-            status.update(label="¡Completado!", state="complete")
-            st.success(f"Archivo guardado: {sh.url}")
-            st.balloons()
-
+        st.success("✅ Cierre completado")
+        st.balloons()
