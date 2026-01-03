@@ -17,45 +17,70 @@ from folium.plugins import PolyLineTextPath
 st.set_page_config(page_title="Monitor 🗞️", layout="wide")
 
 # ==========================================================
-# CSS RESPONSIVE (MÓVIL OK)
+# CSS MAESTRO (Imágenes ajustadas + Sidebar visible)
 # ==========================================================
 st.markdown("""
 <style>
-header, footer, [data-testid="stDecoration"] {
-    display: none !important;
+/* 1. LIMPIEZA DE INTERFAZ (Pero dejando el botón del sidebar vivo) */
+header[data-testid="stHeader"] {
+    background: transparent !important;
 }
+/* Esto oculta la decoración roja de arriba pero deja el botón clicable */
+[data-testid="stDecoration"] { display: none !important; }
+footer { display: none !important; }
 
+/* 2. TÍTULO ADAPTABLE */
 .titulo-smart {
-    margin-left: 40px;
-    margin-top: 10px;
+    margin-left: 50px; /* Espacio para no chocar con el botón del menú */
+    margin-top: 15px;
     font-weight: bold;
     font-size: clamp(18px, 6vw, 26px);
+    color: var(--text-color);
 }
 
-/* ===== GALERÍA ===== */
-.galeria {
+/* 3. GALERÍA GRID RESPONSIVA */
+.galeria-container {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 8px;
+    grid-template-columns: repeat(4, 1fr); /* Escritorio: 4 columnas */
+    gap: 10px;
+    padding: 10px 0;
 }
 
-@media (max-width: 900px) {
-    .galeria {
+/* REGLA MÓVIL: 2 COLUMNAS */
+@media (max-width: 768px) {
+    .galeria-container {
         grid-template-columns: repeat(2, 1fr);
     }
 }
 
-@media (max-width: 600px) {
-    .galeria {
-        grid-template-columns: repeat(2, 1fr);
-    }
-}
-
-.galeria img {
-    width: 100%;
-    aspect-ratio: 1 / 1;
-    object-fit: cover;
+/* 4. ESTILO DE LA FOTO (SIN RECORTES) */
+.foto-card {
+    background-color: #f0f2f6; /* Fondo gris para rellenar */
     border-radius: 8px;
+    border: 1px solid #e0e0e0;
+    overflow: hidden;
+    position: relative;
+    /* Esto hace que el contenedor sea siempre cuadrado */
+    padding-top: 100%; 
+    width: 100%;
+}
+
+.foto-card img {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    /* AQUÍ LA MAGIA: contain muestra la foto entera sin recortar */
+    object-fit: contain; 
+}
+
+.foto-caption {
+    font-size: 11px;
+    text-align: center;
+    padding: 4px;
+    color: #333;
+    font-weight: bold;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -97,20 +122,17 @@ except Exception as e:
 # FUNCIONES
 # ==========================================================
 def obtener_url_final(valor):
-    if not valor:
-        return None
-    if isinstance(valor, list) and valor and isinstance(valor[0], dict):
+    if not valor: return None
+    # Prioridad: Lista de Airtable
+    if isinstance(valor, list) and len(valor) > 0 and isinstance(valor[0], dict):
         return valor[0].get("url")
-
-    val = str(valor).strip()
-    if val.lower() in ("", "none", "nan", "[]"):
-        return None
-    if val.startswith("http"):
-        return val
-
-    urls = re.findall(r'(https?://[^\s\)]+)', val)
+    
+    val_str = str(valor).strip()
+    if val_str.lower() in ("", "none", "nan", "[]"): return None
+    if val_str.startswith("http"): return val_str
+    
+    urls = re.findall(r'(https?://[^\s\)]+)', val_str)
     return urls[0] if urls else None
-
 
 def calcular_distancia(lat1, lon1, lat2, lon2):
     R = 6371
@@ -156,10 +178,14 @@ with tab1:
     df["Hora_dt"] = pd.to_datetime(df["Hora"], errors="coerce")
     df = df.sort_values("Hora_dt")
 
-    df["url_limpia"] = df["Foto"].apply(obtener_url_final) if "Foto" in df.columns else None
+    if "Foto" in df.columns:
+        df["url_limpia"] = df["Foto"].apply(obtener_url_final)
+    else:
+        df["url_limpia"] = None
 
     with st.sidebar:
         st.header("⚙️ Config")
+        # Botón cerrar sidebar nativo
         usuarios = sorted(df["Usuario"].dropna().unique())
         sel_usuarios = st.multiselect("Repartidores", usuarios, default=usuarios)
         tipo_mapa = st.radio("Capa", ["Calle", "Satélite"])
@@ -171,64 +197,101 @@ with tab1:
 
     df_f = df[df["Usuario"].isin(sel_usuarios)]
 
-    # ---------------- MAPA ----------------
+    # ---------------- CÁLCULO DE ESTADÍSTICAS ----------------
+    stats_data = []
+    
+    # Mapa Base
     m = folium.Map(
         location=[df_f["Latitud"].mean(), df_f["Longitud"].mean()],
-        zoom_start=15,
-        zoom_control=False
+        zoom_start=15, zoom_control=False
     )
-
+    
     if tipo_mapa == "Satélite":
-        folium.TileLayer(
-            tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-            attr="Esri"
-        ).add_to(m)
+        folium.TileLayer(tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", attr="Esri").add_to(m)
 
-    for usuario in sel_usuarios:
-        u = df_f[df_f["Usuario"] == usuario]
-        coords = u[["Latitud", "Longitud"]].values.tolist()
+    colores = ['#FF0000', '#00FF00', '#0000FF', '#FF00FF', '#FF8C00']
+
+    for i, usuario in enumerate(sel_usuarios):
+        color = colores[i % len(colores)]
+        u_data = df_f[df_f["Usuario"] == usuario].reset_index(drop=True)
+        
+        if u_data.empty: continue
+        
+        # Calcular Distancia Total
+        dist_total = 0.0
+        coords = u_data[["Latitud", "Longitud"]].values.tolist()
+        
         if len(coords) > 1:
-            folium.PolyLine(coords, weight=4).add_to(m)
+            linea = folium.PolyLine(coords, color=color, weight=4, opacity=0.8).add_to(m)
+            PolyLineTextPath(linea, '   ►   ', repeat=True, offset=8, attributes={'fill': color, 'font-size': '18'}).add_to(m)
+            
+            # Sumar distancias
+            for k in range(len(coords) - 1):
+                dist_total += calcular_distancia(coords[k][0], coords[k][1], coords[k+1][0], coords[k+1][1])
 
-        for _, r in u.iterrows():
+        # Pines del Mapa
+        ult_hito = None
+        for _, r in u_data.iterrows():
+            # 15 mins
+            if ult_hito is None or (r["Hora_dt"] - ult_hito).total_seconds() >= 900:
+                folium.Marker([r["Latitud"], r["Longitud"]], 
+                              icon=folium.DivIcon(html='<div style="font-size:18pt;">📍</div>'),
+                              popup=f"{usuario}<br>{r['Hora']}").add_to(m)
+                ult_hito = r["Hora_dt"]
+            
+            # Foto Mini
             if r["url_limpia"]:
-                folium.Marker(
-                    [r["Latitud"], r["Longitud"]],
-                    popup=folium.Popup(
-                        f'<img src="{r["url_limpia"]}" width="180">',
-                        max_width=180
-                    )
-                ).add_to(m)
+                folium.Marker([r["Latitud"], r["Longitud"]],
+                    icon=folium.DivIcon(html=f'<div style="width:40px; height:40px; border:2px solid {color}; border-radius:4px; overflow:hidden;"><img src="{r["url_limpia"]}" style="width:100%; height:100%; object-fit:cover;"></div>'),
+                    popup=folium.Popup(f'<img src="{r["url_limpia"]}" width="150">', max_width=150)).add_to(m)
 
-    st_folium(m, height=420, width="100%", returned_objects=[])
+        # Inicio / Fin
+        r_ini, r_fin = u_data.iloc[0], u_data.iloc[-1]
+        off = 0.00009 if (abs(r_ini["Latitud"] - r_fin["Latitud"]) < 0.00005) else 0
+        folium.Marker([r_ini["Latitud"], r_ini["Longitud"]], icon=folium.DivIcon(html='<div style="font-size:22pt;">📌</div>'), popup=f"Inicio: {r_ini['Hora']}").add_to(m)
+        folium.Marker([r_fin["Latitud"]+off, r_fin["Longitud"]+off], icon=folium.DivIcon(html='<div style="font-size:22pt;">🏁</div>'), popup=f"Fin: {r_fin['Hora']}").add_to(m)
+
+        # Agregar a Estadísticas
+        stats_data.append({
+            "Repartidor": usuario,
+            "Fotos": u_data['url_limpia'].notna().sum(),
+            "Distancia": f"{dist_total:.2f} km"
+        })
+
+    st_folium(m, height=400, width="100%", returned_objects=[])
 
     # ======================================================
-    # GALERÍA + VISTA AMPLIADA (ESTABLE)
+    # ESTADÍSTICAS POR USUARIO
+    # ======================================================
+    st.markdown("### 📊 Estadísticas")
+    st.dataframe(pd.DataFrame(stats_data), use_container_width=True, hide_index=True)
+
+    # ======================================================
+    # GALERÍA MEJORADA (HTML GRID + CONTAIN)
     # ======================================================
     st.markdown("### 📸 Evidencias")
 
     df_gal = df_f[df_f["url_limpia"].notna()]
 
     if not df_gal.empty:
-
-        # ---- GALERÍA ----
-        html = '<div class="galeria">'
+        html = '<div class="galeria-container">'
         for _, row in df_gal.iterrows():
-            html += f'<img src="{row["url_limpia"]}">'
+            nombre_corto = row["Usuario"].split()[0]
+            # Link abre imagen completa en pestaña nueva
+            html += f'''
+            <div>
+                <a href="{row["url_limpia"]}" target="_blank" style="text-decoration:none;">
+                    <div class="foto-card">
+                        <img src="{row["url_limpia"]}">
+                    </div>
+                    <div class="foto-caption">{nombre_corto} {row["Hora"][:5]}</div>
+                </a>
+            </div>
+            '''
         html += '</div>'
-
         st.markdown(html, unsafe_allow_html=True)
-
-        st.markdown("---")
-
-        # ---- VISTA GRANDE ----
-        with st.expander("🔍 Ver imágenes en grande"):
-            for _, row in df_gal.iterrows():
-                st.image(
-                    row["url_limpia"],
-                    caption=f"{row['Usuario']} · {row['Hora']}",
-                    use_container_width=True
-                )
+    else:
+        st.info("No hay evidencias fotográficas.")
 
 # ==========================================================
 # TAB CIERRE
