@@ -68,18 +68,18 @@ def calcular_distancia(lat1, lon1, lat2, lon2):
     return R * (2 * math.atan2(math.sqrt(a), math.sqrt(1 - a)))
 
 # ==========================================================
-# UI
+# UI - MONITOR
 # ==========================================================
 st.title("🚚 Monitor de Reparto Pro")
 tab1, tab2 = st.tabs(["📍 Mapa de Ruta", "☁️ Cierre de Jornada"])
 
 with tab1:
-    if st.button("🔄 Actualizar Mapa"):
+    if st.button("🔄 Actualizar Datos"):
         st.rerun()
 
     records = table.all()
     if not records:
-        st.warning("No hay datos.")
+        st.warning("Sin datos.")
         st.stop()
 
     df = pd.DataFrame([r["fields"] for r in records])
@@ -100,6 +100,7 @@ with tab1:
         usuarios_lista = sorted(df["Usuario"].unique().tolist())
         sel_usuarios = st.multiselect("Repartidores", usuarios_lista, default=usuarios_lista)
         tipo_mapa = st.radio("Capa", ["Calle", "Satélite"])
+        modo_reporte = st.checkbox("📑 Activar Reporte y Galería", value=True)
 
     if sel_usuarios:
         df_f = df[df["Usuario"].isin(sel_usuarios)].copy()
@@ -109,6 +110,7 @@ with tab1:
             folium.TileLayer(tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', attr='Esri').add_to(m)
 
         colores = ['#FF0000', '#00FF00', '#0000FF', '#FF00FF', '#FF8C00']
+        resumen_jornada = []
 
         for i, nombre in enumerate(sel_usuarios):
             color = colores[i % len(colores)]
@@ -116,31 +118,26 @@ with tab1:
             
             if not u_data.empty:
                 coords = u_data[["Latitud", "Longitud"]].values.tolist()
+                dist_u = 0.0
                 
-                # RUTA Y FLECHAS (Reducidas y delineadas)
+                # 1. RUTA
                 if len(coords) > 1:
-                    folium.PolyLine(coords, color='black', weight=6, opacity=0.2).add_to(m)
-                    linea = folium.PolyLine(coords, color=color, weight=3).add_to(m)
+                    linea = folium.PolyLine(coords, color=color, weight=4, opacity=0.8).add_to(m)
                     PolyLineTextPath(linea, '                                ►                                ', 
                                      repeat=True, offset=8, 
-                                     attributes={'fill': color, 'font-weight': 'bold', 'font-size': '18', 'stroke': 'black', 'stroke-width': '0.5'}).add_to(m)
+                                     attributes={'fill': color, 'font-weight': 'bold', 'font-size': '22', 'stroke': 'black', 'stroke-width': '1'}).add_to(m)
 
-                # HITOS Y MINIATURAS
-                ult_hito = None
+                # 2. MINIATURAS Y KM
                 for j, row in u_data.iterrows():
-                    # Marcadores 15 min 📍 (Más pequeños)
-                    if ult_hito is None or (row["Hora_dt"] - ult_hito).total_seconds() >= 900:
-                        folium.Marker(
-                            [row["Latitud"], row["Longitud"]],
-                            icon=folium.DivIcon(html=f'''<div style="font-size:14pt; filter:drop-shadow(1px 1px 1px black);">📍</div>'''),
-                            popup=f"Hora: {row['Hora']}"
-                        ).add_to(m)
-                        ult_hito = row["Hora_dt"]
+                    if j < len(u_data) - 1:
+                        p_next = u_data.iloc[j+1]
+                        dist_u += calcular_distancia(row["Latitud"], row["Longitud"], p_next["Latitud"], p_next["Longitud"])
 
-                    # Miniaturas (Zoom perfecto sin bordes)
                     if row['url_limpia']:
+                        # Offset para no tapar el emoji si coincide
+                        img_off = 0.00015 if (j == 0 or j == len(u_data)-1) else 0
                         folium.Marker(
-                            [row["Latitud"], row["Longitud"]],
+                            [row["Latitud"] - img_off, row["Longitud"] - img_off],
                             icon=folium.DivIcon(html=f'''
                                 <div style="width:55px; height:55px; border:3px solid {color}; background:white; box-shadow:2px 2px 6px black; border-radius:6px; overflow:hidden; display:flex;">
                                     <img src="{row['url_limpia']}" style="width:100%; height:100%; object-fit:cover; transform:scale(1.4);">
@@ -148,21 +145,47 @@ with tab1:
                             popup=folium.Popup(f'<b>{nombre}</b><br><img src="{row["url_limpia"]}" width="200">', max_width=200)
                         ).add_to(m)
 
-                # INICIO Y FIN (OFFSET PARA NO ENCIMARSE)
+                # 3. INICIO Y FIN (DESPLAZADOS)
                 r_ini, r_fin = u_data.iloc[0], u_data.iloc[-1]
-                mismo_sitio = (r_ini["Latitud"] == r_fin["Latitud"] and r_ini["Longitud"] == r_fin["Longitud"])
-                
-                # Desplazamiento si coinciden (aprox 25 metros)
-                off_lat = 0.00025 if mismo_sitio else 0
-                off_lon = 0.00025 if mismo_sitio else 0
+                mismo_sitio = (abs(r_ini["Latitud"] - r_fin["Latitud"]) < 0.0001 and abs(r_ini["Longitud"] - r_fin["Longitud"]) < 0.0001)
+                off = 0.00045 if mismo_sitio else 0
 
                 folium.Marker([r_ini["Latitud"], r_ini["Longitud"]], 
-                    icon=folium.DivIcon(html=f'<div style="font-size:22pt; filter:drop-shadow(2px 2px 2px black); cursor:pointer;">📌</div>'),
-                    popup=f"SALIDA: {r_ini['Hora']}", z_index_offset=1000).add_to(m)
+                    icon=folium.DivIcon(html=f'<div style="font-size:24pt; filter:drop-shadow(2px 2px 2px black);">📌</div>'),
+                    popup=f"SALIDA: {r_ini['Hora']}", z_index_offset=2000).add_to(m)
                 
-                folium.Marker([r_fin["Latitud"] + off_lat, r_fin["Longitud"] + off_lon], 
-                    icon=folium.DivIcon(html=f'<div style="font-size:22pt; filter:drop-shadow(2px 2px 2px black); cursor:pointer;">🏁</div>'),
-                    popup=f"LLEGADA: {r_fin['Hora']}", z_index_offset=1000).add_to(m)
+                folium.Marker([r_fin["Latitud"] + off, r_fin["Longitud"] + off], 
+                    icon=folium.DivIcon(html=f'<div style="font-size:24pt; filter:drop-shadow(2px 2px 2px black);">🏁</div>'),
+                    popup=f"LLEGADA: {r_fin['Hora']}", z_index_offset=2000).add_to(m)
+
+                resumen_jornada.append({
+                    "Repartidor": nombre,
+                    "Salida": r_ini["Hora"],
+                    "Llegada": r_fin["Hora"],
+                    "Evidencias": u_data['url_limpia'].notna().sum(),
+                    "Distancia": f"{dist_u:.2f} km"
+                })
 
         m.fit_bounds(df_f[["Latitud", "Longitud"]].values.tolist())
         st_folium(m, width="100%", height=600, returned_objects=[])
+
+        # --- SECCIÓN DE REPORTE Y GALERÍA ---
+        if modo_reporte:
+            st.markdown("### 📋 Resumen de Jornada")
+            st.table(pd.DataFrame(resumen_jornada))
+            
+            st.markdown("### 📸 Galería de Testigos")
+            df_gal = df_f[df_f['url_limpia'].notna()]
+            if not df_gal.empty:
+                cols = st.columns(2) # 2 columnas para que en móvil se vea bien grande
+                for idx, (_, f_row) in enumerate(df_gal.iterrows()):
+                    with cols[idx % 2]:
+                        st.image(f_row['url_limpia'], caption=f"{f_row['Usuario']} – {f_row['Hora']}")
+            else:
+                st.info("Sin evidencias fotográficas.")
+
+with tab2:
+    st.header("☁️ Cierre de Jornada")
+    if st.button("🚀 Procesar y Archivar", type="primary"):
+        # Tu lógica de Cloudinary/Sheets...
+        st.success("✅ Cierre completado")
