@@ -268,37 +268,35 @@ if not df_gps.empty:
         m.fit_bounds(df_filtrado[[col_lat, col_lon]].values.tolist())
         st_folium(m, width="100%", height=650)
 
-        # 📄 SECCIÓN DE REPORTE (PDF Friendly)
+        # 📄 SECCIÓN DE REPORTE
         if modo_reporte:
             st.markdown("### 📋 Resumen de Jornada")
             st.table(pd.DataFrame(resumen_datos))
             
             st.write("### 📸 Galería de Testigos")
             
-            # 1. Creamos una lista solo con las filas que REALMENTE tienen una URL de imagen válida
-            filas_con_foto = []
-            for _, row_f in df_filtrado.iterrows():
-                url_extraida = extraer_url_foto(row_f.get(col_foto))
-                if url_extraida:
-                    # Guardamos la fila junto con su URL ya limpia
-                    filas_con_foto.append({
-                        "url": url_extraida,
-                        "usuario": row_f[col_user],
+            # Filtrar filas que tengan contenido
+            df_con_fotos = df_filtrado[df_filtrado[col_foto].notna()]
+            
+            filas_con_url = []
+            for _, row_f in df_con_fotos.iterrows():
+                url_limpia = extraer_url_foto(row_f[col_foto])
+                if url_limpia:
+                    filas_con_url.append({
+                        "url": url_limpia,
+                        "user": row_f[col_user],
                         "hora": row_f[col_hora]
                     })
-            
-            # 2. Mostramos la galería si hay fotos
-            if filas_con_foto:
+
+            if filas_con_url:
                 cols_gal = st.columns(4)
-                for i, datos_foto in enumerate(filas_con_foto):
+                for i, f in enumerate(filas_con_url):
                     with cols_gal[i % 4]:
-                        st.image(datos_foto["url"], caption=f"{datos_foto['usuario']} - {datos_foto['hora']}")
+                        st.image(f["url"], caption=f"{f['user']} - {f['hora']}")
             else:
-                # Si llegamos aquí, es que extraer_url_foto no encontró nada en ninguna fila
-                st.warning(f"No se detectaron imágenes en la columna '{col_foto}'.")
-                with st.expander("🔍 Depuración de datos (Solo para revisión)"):
-                    st.write("Muestra de datos en la columna foto:")
-                    st.write(df_filtrado[col_foto].head())
+                st.warning(f"La columna '{col_foto}' existe, pero no se pudo extraer una URL válida de los datos.")
+                # Esto nos dirá qué hay exactamente adentro de la celda
+                st.write("Dato recibido de Airtable:", df_filtrado[col_foto].iloc[0] if not df_filtrado[col_foto].empty else "Vacío")
               
 # ------------------------------------------
 # PESTAÑA 2: MOTOR DE MIGRACIÓN
