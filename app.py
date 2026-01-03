@@ -15,64 +15,63 @@ from folium.plugins import PolyLineTextPath
 st.set_page_config(page_title="Siguiendo-T", layout="wide")
 
 # ==========================================================
-# CSS MAESTRO (Nuevo Título de 2 Líneas + Galería Blindada)
+# CSS MAESTRO
 # ==========================================================
 st.markdown("""
 <style>
-/* 1. SIDEBAR Y LIMPIEZA */
+/* 1. LIMPIEZA */
 .block-container {
-    padding-top: 0.5rem !important; /* Menos espacio arriba */
+    padding-top: 0rem !important;
     padding-bottom: 0rem !important;
+    padding-left: 1rem !important; /* Mínimo padding lateral */
+    padding-right: 1rem !important;
 }
 header[data-testid="stHeader"] { background: transparent !important; }
 header[data-testid="stHeader"] button { color: var(--text-color) !important; z-index: 9999; }
 [data-testid="stDecoration"] { display: none !important; }
 footer { display: none !important; }
 
-/* 2. NUEVO DISEÑO DE TÍTULO (2 Columnas, la derecha con 2 filas) */
+/* 2. TÍTULO (Más abajo, más grande, alineado a la izquierda) */
 .title-container {
     display: flex;
-    align-items: center; /* Centrado verticalmente */
-    margin-top: 15px; /* Espacio desde el tope */
-    margin-left: 50px; /* Espacio para el botón del menú */
-    margin-bottom: 20px;
-    color: var(--text-color); /* Se adapta al modo oscuro/claro */
+    align-items: center;
+    margin-top: 40px; /* Bajado más */
+    margin-bottom: 15px;
+    margin-left: 2px; /* Alineado casi total a la izquierda */
+    color: var(--text-color);
 }
 
-/* Columna Izq: Emoji Gigante */
+/* Emoji Gigante */
 .title-emoji {
-    font-size: clamp(45px, 12vw, 65px); /* Tamaño dinámico muy grande */
-    margin-right: 15px; /* Separación del texto */
-    line-height: 1; /* Evita espacio extra arriba/abajo */
+    font-size: clamp(50px, 14vw, 75px); /* Aumentado */
+    margin-right: 10px;
+    line-height: 1;
     display: flex;
     align-items: center;
 }
 
-/* Columna Der: Bloque de Texto (2 filas) */
+/* Texto de 2 líneas */
 .title-text-block {
     display: flex;
-    flex-direction: column; /* Apila los textos verticalmente */
+    flex-direction: column;
     justify-content: center;
 }
 
-/* Fila 1 de texto: Título Principal */
 .title-main {
-    font-weight: 900; /* Extra negrita */
-    font-size: clamp(24px, 7vw, 34px); /* Grande y responsive */
-    line-height: 1.1; /* Pegadito */
-    text-transform: uppercase; /* Mayúsculas para impacto */
+    font-weight: 900;
+    font-size: clamp(28px, 8vw, 40px); /* Título más grande */
+    line-height: 1.0;
+    text-transform: uppercase;
 }
 
-/* Fila 2 de texto: Subtítulo */
 .title-sub {
-    font-weight: 600; /* Negrita media */
-    font-size: clamp(16px, 4vw, 20px); /* Tamaño medio */
+    font-weight: 600;
+    font-size: clamp(16px, 5vw, 24px); /* Subtítulo más grande */
     line-height: 1.1;
-    opacity: 0.9; /* Un poquito más suave */
+    opacity: 0.8;
 }
 
-
-/* 3. GALERÍA GRID HTML BLINDADA (2 Col Móvil / 4 Col Escritorio) */
+/* 3. GALERÍA GRID */
 .gallery-container {
     display: flex;
     flex-wrap: wrap;
@@ -83,12 +82,12 @@ footer { display: none !important; }
 .gallery-item {
     box-sizing: border-box;
     padding: 4px;
-    width: 25%; /* Escritorio */
+    width: 25%; /* Escritorio: 4 */
 }
 
 @media (max-width: 768px) {
     .gallery-item {
-        width: 50% !important; /* MÓVIL: 2 COLUMNAS FIJAS */
+        width: 50% !important; /* MÓVIL: 2 COLUMNAS */
     }
 }
 
@@ -168,10 +167,10 @@ def calcular_distancia(lat1, lon1, lat2, lon2):
 # APP
 # ==========================================================
 
-# --- NUEVA ESTRUCTURA DE TÍTULO (HTML) ---
+# TÍTULO HTML (Emoji 🏃🏽‍♂️ + Texto en 2 líneas)
 titulo_html = """
 <div class="title-container">
-    <div class="title-emoji">🏃‍♂️</div>
+    <div class="title-emoji">🏃🏽‍♂️</div>
     <div class="title-text-block">
         <div class="title-main">Siguiendo-T</div>
         <div class="title-sub">Monitor de Reparto</div>
@@ -239,15 +238,16 @@ with tab1:
                     if j < len(u_data) - 1:
                         dist_u += calcular_distancia(row["Latitud"], row["Longitud"], u_data.iloc[j+1]["Latitud"], u_data.iloc[j+1]["Longitud"])
                     
+                    # Pin 15 mins
                     if ult_hito is None or (row["Hora_dt"] - ult_hito).total_seconds() >= 900:
                         folium.Marker([row["Latitud"], row["Longitud"]], 
                                       icon=folium.DivIcon(html=f'<div style="font-size:18pt;">📍</div>'),
                                       popup=f"{nombre}<br>{row['Hora']}").add_to(m)
                         ult_hito = row["Hora_dt"]
                     
+                    # Miniatura
                     if row['url_limpia']:
                         popup_html = f'<img src="{row["url_limpia"]}" style="max-width:220px; max-height:220px; object-fit:contain; border-radius:4px;">'
-                        
                         folium.Marker([row["Latitud"], row["Longitud"]],
                             icon=folium.DivIcon(html=f'<div style="width:30px; height:30px; border:2px solid {color}; background:white; border-radius:4px; overflow:hidden;"><img src="{row["url_limpia"]}" style="width:100%; height:100%; object-fit:cover;"></div>'),
                             popup=folium.Popup(popup_html, max_width=230)).add_to(m)
@@ -259,7 +259,8 @@ with tab1:
                 
                 stats_list.append({"Repartidor": nombre, "Fotos": u_data['url_limpia'].notna().sum(), "Dist.": f"{dist_u:.2f} km"})
 
-        st_folium(m, width="100%", height=450, returned_objects=[])
+        # ALTURA DEL MAPA: 250px
+        st_folium(m, width="100%", height=250, returned_objects=[])
 
         st.markdown("### 📊 Estadísticas")
         st.dataframe(pd.DataFrame(stats_list), use_container_width=True, hide_index=True)
@@ -273,6 +274,7 @@ with tab1:
                 url = row['url_limpia']
                 user = str(row['Usuario']).split()[0].replace("<","").replace(">","")
                 hora = str(row['Hora'])[:5]
+                # HTML compactado
                 html_parts.append(f'<div class="gallery-item"><a href="{url}" target="_blank" style="text-decoration:none;"><div class="photo-card"><img src="{url}" loading="lazy"><div class="photo-caption">{user} {hora}</div></div></a></div>')
             html_parts.append('</div>')
             st.markdown("".join(html_parts), unsafe_allow_html=True)
