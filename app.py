@@ -130,10 +130,21 @@ with tab1:
         
         st.metric("📦 Paquetes/Evidencias hoy", len(df_fotos))
         
-        # 4. MAPA FORENSE CON CONTORNO DE ALTO CONTRASTE
+        # 4. MAPA FORENSE MINIMALISTA (Controles fuera del mapa)
         if not df_gps.empty and 'Latitud' in df_gps.columns and 'Longitud' in df_gps.columns:
-            INTERVALO_MINUTOS = 15  
+            
+            # --- INTERFAZ SUPERIOR MINIMALISTA ---
+            col1, col2, col3 = st.columns([1, 1, 3])
+            
+            with col1:
+                tipo_mapa = st.radio("🗺️ VISTA", ["Calle", "Satélite"], horizontal=True)
+            
+            with col3:
+                # Extraer lista de repartidores para el filtro
+                lista_repartidores = sorted(df_gps['Usuario'].unique().tolist())
+                repartidores_sel = st.multiselect("🙋🏻‍♂️ MOSTRAR REPARTIDORES:", lista_repartidores, default=lista_repartidores)
 
+            # --- PROCESAMIENTO DE DATOS ---
             df_gps['Latitud'] = pd.to_numeric(df_gps['Latitud'], errors='coerce')
             df_gps['Longitud'] = pd.to_numeric(df_gps['Longitud'], errors='coerce')
             df_gps = df_gps.dropna(subset=['Latitud', 'Longitud'])
@@ -142,103 +153,82 @@ with tab1:
                 df_gps['Hora_dt'] = pd.to_datetime(df_gps['Hora'], format='%H:%M:%S', errors='coerce')
                 df_gps = df_gps.sort_values(by='Hora_dt')
 
-            if not df_gps.empty:
-                st.write(f"### 📍 Auditoría de Ruta (Hitos cada {INTERVALO_MINUTOS} min)")
-                
-                lat_center = df_gps['Latitud'].mean()
-                lon_center = df_gps['Longitud'].mean()
-                m = folium.Map(location=[lat_center, lon_center], zoom_start=18)
+            # --- CREACIÓN DEL MAPA ---
+            lat_center = df_gps['Latitud'].mean()
+            lon_center = df_gps['Longitud'].mean()
+            
+            # Mapa base sin controles internos (control_scale=False)
+            m = folium.Map(location=[lat_center, lon_center], zoom_start=18, control_scale=False, zoom_control=False)
 
+            # Lógica de fondo basada en el radio button de Streamlit
+            if tipo_mapa == "Satélite":
                 folium.TileLayer(
                     tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-                    attr='Esri', name='Satélite', overlay=False
+                    attr='Esri', name='Satélite'
                 ).add_to(m)
+            else:
+                folium.TileLayer('OpenStreetMap', name='Calle').add_to(m)
 
-                repartidores = df_gps['Usuario'].unique() if 'Usuario' in df_gps.columns else ['Desconocido']
-                
-                # Nueva paleta de colores vibrantes y fuertes
-                colores_vibrantes = [
-                    '#FF0000', # Rojo Puro
-                    '#00FF00', # Verde Neón
-                    '#0000FF', # Azul Eléctrico
-                    '#FF00FF', # Magenta
-                    '#FF8C00', # Naranja Oscuro
-                    '#7FFF00', # Chartreuse
-                    '#1E90FF'  # Dodger Blue
-                ]
+            colores_vibrantes = ['#FF0000', '#00FF00', '#0000FF', '#FF00FF', '#FF8C00', '#7FFF00', '#1E90FF']
 
-                for i, nombre in enumerate(repartidores):
-                    capa_rep = folium.FeatureGroup(name=f"🙋🏻‍♂️ {nombre}") 
+            # --- DIBUJO DE RUTAS FILTRADAS ---
+            for i, nombre in enumerate(lista_repartidores):
+                # Solo dibujar si el usuario está seleccionado en el multiselect superior
+                if nombre in repartidores_sel:
                     color_u = colores_vibrantes[i % len(colores_vibrantes)]
                     datos_u = df_gps[df_gps['Usuario'] == nombre].copy()
                     
                     if len(datos_u) > 1:
                         coords = datos_u[['Latitud', 'Longitud']].values.tolist()
                         
-                        # 1. EFECTO DE CONTORNO (Línea de fondo negra para resaltar)
-                        folium.PolyLine(
-                            locations=coords, 
-                            color='#000000', # Negro
-                            weight=5,        # Más gruesa que la de color
-                            opacity=0.5      # Semitransparente para que parezca sombra
-                        ).add_to(capa_rep)
-
-                        # 2. TRAYECTORIA PRINCIPAL (Línea de color)
-                        linea = folium.PolyLine(
-                            locations=coords, 
-                            color=color_u, 
-                            weight=2.5, 
-                            opacity=1.0
-                        ).add_to(capa_rep)
-
-                        # 3. FLECHAS (Ajustadas para ser legibles sobre el contorno)
+                        # Contorno negro (glow)
+                        folium.PolyLine(locations=coords, color='#000000', weight=5, opacity=0.4).add_to(m)
+                        # Línea principal
+                        linea = folium.PolyLine(locations=coords, color=color_u, weight=2.5, opacity=1.0).add_to(m)
+                        
+                        # Flechas mínimas (1/5 de densidad)
                         folium.plugins.PolyLineTextPath(
                             linea, '                              ►                              ', 
-                            repeat=True, offset=8, 
-                            attributes={'fill': color_u, 'font-weight': 'bold', 'font-size': '20', 
-                                        'stroke': 'black', 'stroke-width': '0.5'}
-                        ).add_to(capa_rep)
+                            repeat=True, offset=8, attributes={'fill': color_u, 'font-weight': 'bold', 'font-size': '20', 'stroke': 'black', 'stroke-width': '0.5'}
+                        ).add_to(m)
 
-                        # 4. PINES DE REFERENCIA (📍) CADA X MINUTOS
-                        ultima_hora_pin = None
-                        for idx, row_gps in datos_u.iterrows():
-                            hora_actual = row_gps['Hora_dt']
-                            if ultima_hora_pin is None or (hora_actual - ultima_hora_pin).total_seconds() >= INTERVALO_MINUTOS * 60:
+                        # Hitos cada 15 min
+                        INTERVALO = 15
+                        ultima_hora = None
+                        for _, row_gps in datos_u.iterrows():
+                            if ultima_hora is None or (row_gps['Hora_dt'] - ultima_hora).total_seconds() >= INTERVALO * 60:
                                 folium.Marker(
                                     location=[row_gps['Latitud'], row_gps['Longitud']],
                                     icon=folium.DivIcon(html=f'''
-                                        <div style="font-family: sans-serif; color: white; text-align: center;">
-                                            <div style="font-size: 18pt; filter: drop-shadow(2px 2px 2px black);">📍</div>
-                                            <div style="font-size: 9pt; background-color: rgba(0,0,0,0.7); padding: 2px 5px; border-radius: 3px; font-weight: bold;">
-                                                {row_gps['Hora'][:5]}
-                                            </div>
+                                        <div style="text-align: center;">
+                                            <div style="font-size: 16pt; filter: drop-shadow(1px 1px 1px black);">📍</div>
+                                            <div style="font-size: 8pt; color: white; background: rgba(0,0,0,0.7); padding: 1px 3px; border-radius: 3px;">{row_gps['Hora'][:5]}</div>
                                         </div>
                                     ''')
-                                ).add_to(capa_rep)
-                                ultima_hora_pin = hora_actual
+                                ).add_to(m)
+                                ultima_hora = row_gps['Hora_dt']
 
-                        # 5. EXTREMOS (📌 SALIDA y 🏁 LLEGADA)
-                        row_inicio = datos_u.iloc[0]
-                        folium.Marker(
-                            location=[row_inicio['Latitud'], row_inicio['Longitud']],
-                            icon=folium.DivIcon(html=f'<div style="font-size: 25pt; filter: drop-shadow(2px 2px 2px black);">📌</div>'),
-                            popup=f"SALIDA: {row_inicio['Hora']}"
-                        ).add_to(capa_rep)
+                        # Marcadores corregidos (Inicio y Fin)
+                        r_ini, r_fin = datos_u.iloc[0], datos_u.iloc[-1]
                         
-                        row_fin = datos_u.iloc[-1]
-                        dist = abs(row_inicio['Latitud'] - row_fin['Latitud']) + abs(row_inicio['Longitud'] - row_fin['Longitud'])
+                        # Inicio
+                        folium.Marker(
+                            location=[r_ini['Latitud'], r_ini['Longitud']],
+                            icon=folium.DivIcon(html=f'<div style="font-size: 24pt; filter: drop-shadow(2px 2px 2px black);">📌</div>'),
+                            popup=f"SALIDA: {r_ini['Hora']}"
+                        ).add_to(m)
+                        
+                        # Fin (con offset si están solapados)
+                        dist = abs(r_ini['Latitud'] - r_fin['Latitud']) + abs(r_ini['Longitud'] - r_fin['Longitud'])
                         off = 0.00005 if dist < 0.0001 else 0
-                        
                         folium.Marker(
-                            location=[row_fin['Latitud'] + off, row_fin['Longitud'] + off],
-                            icon=folium.DivIcon(html=f'<div style="font-size: 25pt; filter: drop-shadow(2px 2px 2px black);">🏁</div>'),
-                            popup=f"LLEGADA: {row_fin['Hora']}"
-                        ).add_to(capa_rep)
+                            location=[r_fin['Latitud'] + off, r_fin['Longitud'] + off],
+                            icon=folium.DivIcon(html=f'<div style="font-size: 24pt; filter: drop-shadow(2px 2px 2px black);">🏁</div>'),
+                            popup=f"LLEGADA: {r_fin['Hora']}"
+                        ).add_to(m)
 
-                    capa_rep.add_to(m)
-
-                folium.LayerControl(collapsed=False).add_to(m)
-                st_folium(m, width=1200, height=600)
+            # Mostrar el mapa limpio (sin LayerControl interno)
+            st_folium(m, width=1300, height=700, returned_objects=[])
               
 # ------------------------------------------
 # PESTAÑA 2: MOTOR DE MIGRACIÓN
