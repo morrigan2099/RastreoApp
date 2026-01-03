@@ -15,7 +15,22 @@ from folium.plugins import PolyLineTextPath
 # ==========================================================
 # CONFIGURACIÓN DE PÁGINA
 # ==========================================================
-st.set_page_config(page_title="Monitor de Reparto Pro", layout="wide")
+st.set_page_config(page_title="Monitor 🗞️", layout="wide")
+
+# Estilo CSS para forzar el título en una línea y ajustar visuales
+st.markdown("""
+    <style>
+    .reportview-container .main .block-container { padding-top: 1rem; }
+    .titulo-movil {
+        font-size: 22px !important;
+        font-weight: bold;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        margin-bottom: 10px;
+    }
+    </style>
+    """, unsafe_allow_html=True)
 
 # ==========================================================
 # CARGA DE CREDENCIALES (SECRETS)
@@ -68,15 +83,14 @@ def calcular_distancia(lat1, lon1, lat2, lon2):
     return R * (2 * math.atan2(math.sqrt(a), math.sqrt(1 - a)))
 
 # ==========================================================
-# UI - MONITOR
+# UI - MONITOR 🗞️
 # ==========================================================
-st.title("🚚 Monitor de Reparto Pro")
-tab1, tab2 = st.tabs(["📍 Mapa de Ruta", "☁️ Cierre de Jornada"])
+# Título pequeño en una sola línea
+st.markdown('<div class="titulo-movil">🗞️ Monitor de Reparto Folletos</div>', unsafe_allow_html=True)
+
+tab1, tab2 = st.tabs(["📍 Mapa", "☁️ Cierre"])
 
 with tab1:
-    if st.button("🔄 Actualizar Datos"):
-        st.rerun()
-
     records = table.all()
     if not records:
         st.warning("Sin datos.")
@@ -96,15 +110,15 @@ with tab1:
     df["url_limpia"] = df["Foto"].apply(obtener_url_final)
 
     with st.sidebar:
-        st.header("⚙️ Filtros")
+        st.header("⚙️ Config")
         usuarios_lista = sorted(df["Usuario"].unique().tolist())
         sel_usuarios = st.multiselect("Repartidores", usuarios_lista, default=usuarios_lista)
         tipo_mapa = st.radio("Capa", ["Calle", "Satélite"])
-        modo_reporte = st.checkbox("📑 Activar Reporte y Galería", value=True)
+        modo_reporte = st.checkbox("📑 Reporte", value=True)
 
     if sel_usuarios:
         df_f = df[df["Usuario"].isin(sel_usuarios)].copy()
-        m = folium.Map(location=[df_f["Latitud"].mean(), df_f["Longitud"].mean()], zoom_start=15)
+        m = folium.Map(location=[df_f["Latitud"].mean(), df_f["Longitud"].mean()], zoom_start=15, zoom_control=False)
         
         if tipo_mapa == "Satélite":
             folium.TileLayer(tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', attr='Esri').add_to(m)
@@ -120,12 +134,14 @@ with tab1:
                 coords = u_data[["Latitud", "Longitud"]].values.tolist()
                 dist_u = 0.0
                 
+                # RUTA
                 if len(coords) > 1:
                     linea = folium.PolyLine(coords, color=color, weight=4, opacity=0.8).add_to(m)
                     PolyLineTextPath(linea, '                                ►                                ', 
                                      repeat=True, offset=8, 
                                      attributes={'fill': color, 'font-weight': 'bold', 'font-size': '22', 'stroke': 'black', 'stroke-width': '1'}).add_to(m)
 
+                # PINES Y MINIATURAS
                 ult_hito = None
                 for j, row in u_data.iterrows():
                     if j < len(u_data) - 1:
@@ -135,66 +151,58 @@ with tab1:
                     if ult_hito is None or (row["Hora_dt"] - ult_hito).total_seconds() >= 900:
                         folium.Marker(
                             [row["Latitud"], row["Longitud"]],
-                            icon=folium.DivIcon(html=f'''
-                                <div style="text-align:center;">
-                                    <div style="font-size:20pt; filter: drop-shadow(1px 1px 2px black);">📍</div>
-                                    <div style="font-size:8pt; color:white; background:rgba(0,0,0,0.7); padding:2px 4px; border-radius:3px; font-weight:bold;">{row["Hora"][:5]}</div>
-                                </div>'''),
-                            popup=folium.Popup(f"<b>{nombre}</b><br>Hito: {row['Hora']}", max_width=180),
+                            icon=folium.DivIcon(html=f'<div style="text-align:center;"><div style="font-size:20pt; filter: drop-shadow(1px 1px 2px black);">📍</div></div>'),
                             z_index_offset=1000 
                         ).add_to(m)
                         ult_hito = row["Hora_dt"]
 
                     if row['url_limpia']:
-                        img_off = 0.00005 if (j == 0 or j == len(u_data)-1) else 0
                         folium.Marker(
-                            [row["Latitud"] - img_off, row["Longitud"] - img_off],
+                            [row["Latitud"], row["Longitud"]],
                             icon=folium.DivIcon(html=f'''
-                                <div style="width:55px; height:55px; border:3px solid {color}; background:white; box-shadow:2px 2px 6px black; border-radius:6px; overflow:hidden; display:flex;">
+                                <div style="width:50px; height:50px; border:3px solid {color}; background:white; box-shadow:2px 2px 6px black; border-radius:6px; overflow:hidden; display:flex;">
                                     <img src="{row['url_limpia']}" style="width:100%; height:100%; object-fit:cover; transform:scale(1.4);">
                                 </div>'''),
-                            popup=folium.Popup(f'<b>{nombre}</b><br><img src="{row["url_limpia"]}" width="180">', max_width=200),
-                            z_index_offset=100
+                            popup=folium.Popup(f'<img src="{row["url_limpia"]}" width="150">', max_width=150)
                         ).add_to(m)
 
+                # INICIO Y FIN
                 r_ini, r_fin = u_data.iloc[0], u_data.iloc[-1]
-                mismo_sitio = (abs(r_ini["Latitud"] - r_fin["Latitud"]) < 0.00005 and abs(r_ini["Longitud"] - r_fin["Longitud"]) < 0.00005)
+                mismo_sitio = (abs(r_ini["Latitud"] - r_fin["Latitud"]) < 0.00005)
                 off = 0.00009 if mismo_sitio else 0
 
                 folium.Marker([r_ini["Latitud"], r_ini["Longitud"]], 
-                    icon=folium.DivIcon(html=f'<div style="text-align:center;"><div style="font-size:24pt; filter: drop-shadow(2px 2px 2px black);">📌</div></div>'),
-                    popup=folium.Popup(f"<b>SALIDA</b><br>Hora: {r_ini['Hora']}", max_width=150), 
+                    icon=folium.DivIcon(html=f'<div style="font-size:22pt; filter: drop-shadow(2px 2px 2px black);">📌</div>'),
                     z_index_offset=2000).add_to(m)
                 
                 folium.Marker([r_fin["Latitud"] + off, r_fin["Longitud"] + off], 
-                    icon=folium.DivIcon(html=f'<div style="text-align:center;"><div style="font-size:24pt; filter: drop-shadow(2px 2px 2px black);">🏁</div></div>'),
-                    popup=folium.Popup(f"<b>LLEGADA</b><br>Hora: {r_fin['Hora']}", max_width=150), 
+                    icon=folium.DivIcon(html=f'<div style="font-size:22pt; filter: drop-shadow(2px 2px 2px black);">🏁</div>'),
                     z_index_offset=2000).add_to(m)
 
                 resumen_jornada.append({
-                    "Repartidor": nombre, "Salida": r_ini["Hora"], "Llegada": r_fin["Hora"],
-                    "📸": u_data['url_limpia'].notna().sum(), "Distancia": f"{dist_u:.2f} km"
+                    "Repartidor": nombre, "Evid.": u_data['url_limpia'].notna().sum(), "Dist.": f"{dist_u:.2f} km"
                 })
 
         m.fit_bounds(df_f[["Latitud", "Longitud"]].values.tolist())
-
-        # MAPA OPTIMIZADO (Altura 450px para evitar "trampa de dedos" en móvil)
-        st_folium(m, width="100%", height=450, returned_objects=[])
+        st_folium(m, width="100%", height=400, returned_objects=[])
 
         if modo_reporte:
-            st.markdown("<br>", unsafe_allow_html=True)
-            st.markdown("### 📋 Resumen de Jornada")
-            st.dataframe(pd.DataFrame(resumen_jornada), use_container_width=True)
+            st.markdown("---")
+            # Resumen ultra compacto para móvil
+            st.write("**📊 Resumen Rápido**")
+            st.dataframe(pd.DataFrame(resumen_jornada), use_container_width=True, hide_index=True)
             
-            st.markdown("### 📸 Galería")
+            st.write("**📸 Galería de Evidencias (Toca para ampliar)**")
             df_gal = df_f[df_f['url_limpia'].notna()]
             if not df_gal.empty:
+                # Grid de 2 columnas
                 cols = st.columns(2)
                 for idx, (_, f_row) in enumerate(df_gal.iterrows()):
                     with cols[idx % 2]:
-                        st.image(f_row['url_limpia'], caption=f"{f_row['Usuario']} – {f_row['Hora']}")
+                        # Streamlit permite ampliar la imagen a pantalla completa por defecto al hacer clic
+                        st.image(f_row['url_limpia'], caption=f"{f_row['Usuario']} {f_row['Hora'][:5]}", use_container_width=True)
 
 with tab2:
-    st.header("☁️ Cierre de Jornada")
-    if st.button("🚀 Procesar y Archivar", type="primary"):
-        st.success("✅ Cierre completado")
+    st.header("Cierre")
+    if st.button("🚀 Archivar Día", type="primary"):
+        st.success("Completado")
