@@ -148,17 +148,27 @@ def calcular_distancia(lat1, lon1, lat2, lon2):
 
 # --- Función Auxiliar: Extraer URL de Foto de forma segura ---
 def extraer_url_foto(valor_celda):
-    if not valor_celda:
+    if not valor_celda or str(valor_celda) == 'nan':
         return None
-    # Caso 1: Es una lista de Airtable (formato estándar)
+    
+    # Si Airtable lo envía como lista: [{'url': '...', ...}]
     if isinstance(valor_celda, list) and len(valor_celda) > 0:
-        return valor_celda[0].get('url')
-    # Caso 2: Es un diccionario directo
+        item = valor_celda[0]
+        if isinstance(item, dict):
+            return item.get('url')
+        else:
+            return str(item) # Por si viene la URL directa en la lista
+            
+    # Si viene como un diccionario directo
     if isinstance(valor_celda, dict):
         return valor_celda.get('url')
-    # Caso 3: Es una cadena de texto (URL directa)
-    if isinstance(valor_celda, str) and (valor_celda.startswith('http') or valor_celda.startswith('https')):
-        return valor_celda
+    
+    # Si es una cadena de texto (URL limpia o con espacios)
+    if isinstance(valor_celda, str):
+        url = valor_celda.strip()
+        if url.startswith('http'):
+            return url
+            
     return None
 
 # --- SECCIÓN 4: MAPA ESTRATÉGICO MAESTRO ---
