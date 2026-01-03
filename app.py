@@ -17,50 +17,70 @@ from folium.plugins import PolyLineTextPath
 # ==========================================================
 st.set_page_config(page_title="Monitor 🗞️", layout="wide")
 
-# CSS AGRESIVO PARA FORZAR 2 COLUMNAS EN MÓVIL
+# CSS: Título y Estilos de Galería HTML
 st.markdown("""
     <style>
-    /* 1. Ocultar interfaz de Streamlit */
+    /* Ocultar interfaz Streamlit */
     header[data-testid="stHeader"] { background: transparent !important; }
     header[data-testid="stHeader"] button { color: var(--text-color) !important; }
     footer {display: none !important;}
     [data-testid="stDecoration"] {display:none !important;}
     
-    /* 2. Título Adaptable */
     .titulo-smart {
-        margin-left: 40px; 
-        margin-top: 10px;
-        font-weight: bold;
-        white-space: nowrap;
-        font-size: clamp(18px, 6vw, 24px); 
+        margin-left: 40px; margin-top: 10px;
+        font-weight: bold; white-space: nowrap;
+        font-size: clamp(18px, 6vw, 26px);
         color: var(--text-color);
     }
     
-    /* 3. REGLA MAESTRA: FORZAR GRID EN GALERÍA */
-    /* Apuntamos al contenedor de las columnas */
-    [data-testid="stHorizontalBlock"] {
-        flex-wrap: wrap !important; /* Permite que bajen de línea */
-        gap: 0px !important; /* Quitamos huecos raros */
+    /* --- GRID DE GALERÍA HTML --- */
+    .galeria-container {
+        display: grid;
+        gap: 10px;
+        padding: 10px 0;
     }
     
-    /* Apuntamos a CADA columna individual */
-    [data-testid="column"] {
-        /* ESTO ES LO QUE OBLIGA A QUE SEAN 2 */
-        width: 50% !important;
-        flex: 0 0 50% !important;
-        min-width: 50% !important;
-        max-width: 50% !important;
-        padding: 5px !important; /* Un poco de aire entre fotos */
+    /* ESCRITORIO: 4 Columnas */
+    @media (min-width: 769px) {
+        .galeria-container { grid-template-columns: repeat(4, 1fr); }
     }
     
-    /* 4. Ajustar las imágenes dentro de esas columnas */
-    [data-testid="stImage"] {
-        height: auto !important;
+    /* MÓVIL: 2 Columnas EXACTAS */
+    @media (max-width: 768px) {
+        .galeria-container { grid-template-columns: repeat(2, 1fr); }
     }
-    [data-testid="stImage"] img {
-        object-fit: cover !important;
-        aspect-ratio: 1/1 !important; /* Fotos cuadradas */
-        border-radius: 8px !important;
+
+    /* TARJETA DE FOTO */
+    .foto-item {
+        background: #f0f2f6;
+        border-radius: 8px;
+        padding: 5px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        border: 1px solid #ddd;
+    }
+
+    /* IMAGEN CONTROLADA (Sin recortes) */
+    .foto-img-html {
+        width: 100%;
+        height: auto;       /* Mantiene proporción original */
+        max-height: 250px;  /* Evita que sean gigantes verticalmente */
+        object-fit: contain;/* Muestra TODA la imagen sin recortar */
+        border-radius: 4px;
+        cursor: pointer;    /* Manita al pasar el mouse */
+    }
+    
+    .foto-caption {
+        font-size: 11px;
+        margin-top: 4px;
+        text-align: center;
+        color: #333;
+        font-weight: 500;
+        width: 100%;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -72,13 +92,6 @@ try:
     AIRTABLE_API_KEY = st.secrets["AIRTABLE_API_KEY"]
     AIRTABLE_BASE_ID = st.secrets["AIRTABLE_BASE_ID"]
     AIRTABLE_TABLE_NAME = st.secrets["AIRTABLE_TABLE_NAME"]
-    
-    cloudinary.config(
-        cloud_name=st.secrets["CLOUDINARY_CLOUD_NAME"],
-        api_key=st.secrets["CLOUDINARY_API_KEY"],
-        api_secret=st.secrets["CLOUDINARY_API_SECRET"]
-    )
-    
     g_creds = dict(st.secrets["google_creds"])
     g_creds["private_key"] = g_creds["private_key"].replace("\\n", "\n")
     creds = Credentials.from_service_account_info(g_creds, scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"])
@@ -94,14 +107,13 @@ except Exception as e:
 # ==========================================================
 def obtener_url_final(valor):
     if not valor: return None
+    # Prioridad: Objeto de Airtable
     if isinstance(valor, list) and len(valor) > 0 and isinstance(valor[0], dict):
         return valor[0].get("url")
+    # Fallback: String
     val_str = str(valor).strip()
     if val_str.lower() in ['nan', 'none', '', '[]']: return None
     if val_str.startswith('http'): return val_str
-    if '(' in val_str and ')' in val_str:
-        urls = re.findall(r'\((https?://[^\)]+)\)', val_str)
-        if urls: return urls[0]
     return None
 
 def calcular_distancia(lat1, lon1, lat2, lon2):
@@ -132,9 +144,9 @@ with tab1:
     df["Longitud"] = pd.to_numeric(df["Longitud"], errors="coerce")
     df = df.dropna(subset=["Latitud", "Longitud"])
     
-    # ORDEN CRONOLÓGICO ASEGURADO
+    # Orden Cronológico
     df["Hora_dt"] = pd.to_datetime(df["Hora"], errors="coerce")
-    df = df.sort_values("Hora_dt") # <--- ESTO ORDENA LAS FOTOS
+    df = df.sort_values("Hora_dt")
     
     if "Foto" in df.columns:
         df["url_limpia"] = df["Foto"].apply(obtener_url_final)
@@ -142,7 +154,6 @@ with tab1:
         df["url_limpia"] = None
 
     with st.sidebar:
-        st.header("⚙️ Config")
         usuarios_lista = sorted(df["Usuario"].unique().tolist())
         sel_usuarios = st.multiselect("Repartidores", usuarios_lista, default=usuarios_lista)
         tipo_mapa = st.radio("Capa", ["Calle", "Satélite"])
@@ -179,7 +190,7 @@ with tab1:
                         if ult_hito is None or (row["Hora_dt"] - ult_hito).total_seconds() >= 900:
                             folium.Marker([row["Latitud"], row["Longitud"]], 
                                           icon=folium.DivIcon(html=f'<div style="font-size:18pt;">📍</div>'),
-                                          popup=f"{nombre}: {row['Hora']}").add_to(m)
+                                          popup=folium.Popup(f"{nombre}<br>{row['Hora']}", max_width=150)).add_to(m)
                             ult_hito = row["Hora_dt"]
                         
                         if row['url_limpia']:
@@ -202,16 +213,27 @@ with tab1:
             
             st.write("**📸 Evidencias (Cronológico)**")
             
-            # --- GALERÍA 2x2 FORZADA ---
+            # --- GALERÍA HTML RESPONSIVA (LA SOLUCIÓN FINAL) ---
             df_gal = df_f[df_f['url_limpia'].notna()]
+            
             if not df_gal.empty:
-                # Usamos st.columns(2) fijo. El CSS de arriba (width: 50% !important)
-                # asegura que Streamlit NO las ponga en una sola columna en móvil.
-                cols = st.columns(2) 
-                for i, (_, row) in enumerate(df_gal.iterrows()):
-                    with cols[i % 2]:
-                        # use_column_width=True + aspect-ratio CSS hace que se vean cuadradas y alineadas
-                        st.image(row['url_limpia'], caption=f"{row['Usuario'].split()[0]} {row['Hora'][:5]}", use_container_width=True)
+                html_gallery = '<div class="galeria-container">'
+                for _, row in df_gal.iterrows():
+                    # Link al hacer click para ver en grande (target=_blank)
+                    # max-height: 250px en CSS evita que sean gigantes
+                    # object-fit: contain evita que se recorten
+                    html_gallery += f'''
+                    <div class="foto-item">
+                        <a href="{row['url_limpia']}" target="_blank">
+                            <img src="{row['url_limpia']}" class="foto-img-html">
+                        </a>
+                        <div class="foto-caption">{row['Usuario'].split()[0]} {row['Hora'][:5]}</div>
+                    </div>
+                    '''
+                html_gallery += '</div>'
+                st.markdown(html_gallery, unsafe_allow_html=True)
+            else:
+                st.info("Sin fotos para mostrar.")
 
 with tab2:
     st.header("Cierre")
