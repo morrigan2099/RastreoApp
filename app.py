@@ -55,22 +55,36 @@ GOOGLE_JSON_RAW = """
 api = Api(AIRTABLE_API_KEY)
 table = api.table(AIRTABLE_BASE_ID, AIRTABLE_TABLE_NAME)
 
-google_creds = json.loads(GOOGLE_JSON_RAW)
-creds = Credentials.from_service_account_info(
-    google_creds,
-    scopes=[
-        "https://www.googleapis.com/auth/spreadsheets",
-        "https://www.googleapis.com/auth/drive"
-    ]
-)
-gc = gspread.authorize(creds)
+try:
+    if "REEMPLAZA" in GOOGLE_JSON_RAW or len(GOOGLE_JSON_RAW) < 50:
+        st.error("⚠️ Falta pegar el JSON de Google.")
+        st.stop()
 
-cloudinary.config(
-    cloud_name=CLOUDINARY_CLOUD_NAME,
-    api_key=CLOUDINARY_API_KEY,
-    api_secret=CLOUDINARY_API_SECRET,
-    secure=True
-)
+    json_limpio = (
+        GOOGLE_JSON_RAW
+        .replace('\xa0', ' ')
+        .replace('\\\n', '\\n')
+    )
+
+    google_creds_dict = json.loads(json_limpio, strict=False)
+
+    creds = Credentials.from_service_account_info(
+        google_creds_dict,
+        scopes=[
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive"
+        ]
+    )
+
+    gc = gspread.authorize(creds)
+
+except json.JSONDecodeError as e:
+    st.error(f"❌ Error de formato JSON: {e}")
+    st.stop()
+except Exception as e:
+    st.error(f"❌ Error de credenciales Google: {e}")
+    st.stop()
+
 
 # ==========================================================
 # FUNCIONES CLAVE
