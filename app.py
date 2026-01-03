@@ -17,24 +17,25 @@ from folium.plugins import PolyLineTextPath
 # ==========================================================
 st.set_page_config(page_title="Monitor 🗞️", layout="wide")
 
-# --- CSS RESPONSIVO MAESTRO ---
+# --- CSS MAESTRO: RESPONSIVO + OCULTAR BARRAS STREAMLIT ---
 st.markdown("""
     <style>
-    /* Estilo del Título Dinámico */
-    .titulo-contenedor {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        margin-bottom: 10px;
-    }
-    .titulo-texto {
-        font-weight: bold;
-        color: #31333F;
-    }
+    /* Ocultar Header de Streamlit y Footer (Manage App) */
+    header {visibility: hidden;}
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    [data-testid="stDecoration"] {display:none;}
+    [data-testid="stStatusWidget"] {display:none;}
     
-    /* Configuración para Escritorio */
+    /* Ajuste de márgenes para ganar espacio arriba */
+    .block-container { padding-top: 0.5rem !important; padding-bottom: 0rem !important; }
+
+    /* Título Dinámico */
+    .titulo-texto { font-weight: bold; color: #31333F; }
+    
+    /* Desktop */
     @media (min-width: 800px) {
-        .titulo-texto { font-size: 32px; }
+        .titulo-texto { font-size: 28px; }
         .galeria-grid {
             display: grid;
             grid-template-columns: repeat(4, 1fr);
@@ -42,7 +43,7 @@ st.markdown("""
         }
     }
 
-    /* Configuración para Móvil */
+    /* Móvil */
     @media (max-width: 799px) {
         .titulo-texto { font-size: 18px; white-space: nowrap; }
         .galeria-grid {
@@ -50,28 +51,31 @@ st.markdown("""
             grid-template-columns: repeat(2, 1fr);
             gap: 8px;
         }
-        .block-container { padding-top: 1rem !important; }
     }
 
-    /* Estilo de las fotos en la galería */
+    /* Cards de la Galería */
     .foto-card {
         width: 100%;
-        border-radius: 8px;
+        border-radius: 10px;
         overflow: hidden;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
         background: white;
+        border: 1px solid #eee;
     }
     .foto-img {
         width: 100%;
         aspect-ratio: 1 / 1;
         object-fit: cover;
         display: block;
+        cursor: pointer;
     }
     .foto-pie {
-        font-size: 10px;
-        padding: 5px;
+        font-size: 11px;
+        padding: 6px;
         text-align: center;
-        color: #666;
+        color: #555;
+        font-weight: 500;
+        background: #f9f9f9;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -97,10 +101,8 @@ try:
         scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
     )
     gc = gspread.authorize(creds)
-    
     api = Api(AIRTABLE_API_KEY)
     table = api.table(AIRTABLE_BASE_ID, AIRTABLE_TABLE_NAME)
-    
 except Exception as e:
     st.error(f"❌ Error en Secrets: {e}")
     st.stop()
@@ -129,14 +131,9 @@ def calcular_distancia(lat1, lon1, lat2, lon2):
 # ==========================================================
 # UI - MONITOR 🗞️
 # ==========================================================
-st.markdown(f'''
-    <div class="titulo-contenedor">
-        <span style="font-size: 24px;">🗞️</span>
-        <span class="titulo-texto">Monitor de Reparto Folletos</span>
-    </div>
-''', unsafe_allow_html=True)
+st.markdown('<div style="padding-bottom:10px;"><span style="font-size: 22px;">🗞️</span> <span class="titulo-texto">Monitor de Reparto Folletos</span></div>', unsafe_allow_html=True)
 
-tab1, tab2 = st.tabs(["📍 Mapa en Vivo", "☁️ Cierre"])
+tab1, tab2 = st.tabs(["📍 Mapa de Ruta", "☁️ Cierre de Jornada"])
 
 with tab1:
     records = table.all()
@@ -162,7 +159,7 @@ with tab1:
         usuarios_lista = sorted(df["Usuario"].unique().tolist())
         sel_usuarios = st.multiselect("Repartidores", usuarios_lista, default=usuarios_lista)
         tipo_mapa = st.radio("Capa", ["Calle", "Satélite"])
-        modo_reporte = st.checkbox("📑 Reporte", value=True)
+        if st.button("🔄 Actualizar"): st.rerun()
 
     if sel_usuarios:
         df_f = df[df["Usuario"].isin(sel_usuarios)].copy()
@@ -188,7 +185,6 @@ with tab1:
                                      repeat=True, offset=8, 
                                      attributes={'fill': color, 'font-weight': 'bold', 'font-size': '22', 'stroke': 'black', 'stroke-width': '1'}).add_to(m)
 
-                # PINES Y MINIATURAS
                 ult_hito = None
                 for j, row in u_data.iterrows():
                     if j < len(u_data) - 1:
@@ -196,20 +192,13 @@ with tab1:
                         dist_u += calcular_distancia(row["Latitud"], row["Longitud"], p_next["Latitud"], p_next["Longitud"])
 
                     if ult_hito is None or (row["Hora_dt"] - ult_hito).total_seconds() >= 900:
-                        folium.Marker(
-                            [row["Latitud"], row["Longitud"]],
-                            icon=folium.DivIcon(html=f'<div style="text-align:center;"><div style="font-size:20pt; filter: drop-shadow(1px 1px 2px black);">📍</div></div>'),
-                            z_index_offset=1000 
-                        ).add_to(m)
+                        folium.Marker([row["Latitud"], row["Longitud"]], icon=folium.DivIcon(html=f'<div style="text-align:center;"><div style="font-size:18pt; filter: drop-shadow(1px 1px 2px black);">📍</div></div>'), z_index_offset=1000).add_to(m)
                         ult_hito = row["Hora_dt"]
 
                     if row['url_limpia']:
                         folium.Marker(
                             [row["Latitud"], row["Longitud"]],
-                            icon=folium.DivIcon(html=f'''
-                                <div style="width:50px; height:50px; border:3px solid {color}; background:white; box-shadow:2px 2px 6px black; border-radius:6px; overflow:hidden; display:flex;">
-                                    <img src="{row['url_limpia']}" style="width:100%; height:100%; object-fit:cover; transform:scale(1.4);">
-                                </div>'''),
+                            icon=folium.DivIcon(html=f'<div style="width:50px; height:50px; border:3px solid {color}; background:white; box-shadow:2px 2px 6px black; border-radius:6px; overflow:hidden; display:flex;"><img src="{row["url_limpia"]}" style="width:100%; height:100%; object-fit:cover; transform:scale(1.4);"></div>'),
                             popup=folium.Popup(f'<img src="{row["url_limpia"]}" width="150">', max_width=150)
                         ).add_to(m)
 
@@ -217,40 +206,32 @@ with tab1:
                 mismo_sitio = (abs(r_ini["Latitud"] - r_fin["Latitud"]) < 0.00005)
                 off = 0.00009 if mismo_sitio else 0
 
-                folium.Marker([r_ini["Latitud"], r_ini["Longitud"]], 
-                    icon=folium.DivIcon(html=f'<div style="text-align:center;"><div style="font-size:22pt; filter: drop-shadow(2px 2px 2px black);">📌</div></div>'),
-                    z_index_offset=2000).add_to(m)
-                
-                folium.Marker([r_fin["Latitud"] + off, r_fin["Longitud"] + off], 
-                    icon=folium.DivIcon(html=f'<div style="text-align:center;"><div style="font-size:22pt; filter: drop-shadow(2px 2px 2px black);">🏁</div></div>'),
-                    z_index_offset=2000).add_to(m)
+                folium.Marker([r_ini["Latitud"], r_ini["Longitud"]], icon=folium.DivIcon(html=f'<div style="text-align:center;"><div style="font-size:22pt; filter: drop-shadow(2px 2px 2px black);">📌</div></div>'), z_index_offset=2000).add_to(m)
+                folium.Marker([r_fin["Latitud"] + off, r_fin["Longitud"] + off], icon=folium.DivIcon(html=f'<div style="text-align:center;"><div style="font-size:22pt; filter: drop-shadow(2px 2px 2px black);">🏁</div></div>'), z_index_offset=2000).add_to(m)
 
-                resumen_jornada.append({
-                    "Repartidor": nombre, "📸": u_data['url_limpia'].notna().sum(), "Dist.": f"{dist_u:.2f} km"
-                })
+                resumen_jornada.append({"Repartidor": nombre, "📸": u_data['url_limpia'].notna().sum(), "Dist.": f"{dist_u:.2f} km"})
 
         m.fit_bounds(df_f[["Latitud", "Longitud"]].values.tolist())
         st_folium(m, width="100%", height=400, returned_objects=[])
 
-        if modo_reporte:
-            st.markdown("---")
-            st.write("**📊 Resumen**")
-            st.dataframe(pd.DataFrame(resumen_jornada), use_container_width=True, hide_index=True)
-            
-            st.write("**📸 Evidencias**")
-            df_gal = df_f[df_f['url_limpia'].notna()]
-            if not df_gal.empty:
-                # GALERÍA CON CSS GRID RESPONSIVO
-                galeria_html = '<div class="galeria-grid">'
-                for idx, row in df_gal.iterrows():
-                    galeria_html += f'''
-                    <div class="foto-card">
-                        <img src="{row['url_limpia']}" class="foto-img">
-                        <div class="foto-pie">{row['Usuario']} - {row['Hora'][:5]}</div>
-                    </div>
-                    '''
-                galeria_html += '</div>'
-                st.markdown(galeria_html, unsafe_allow_html=True)
+        # --- SECCIÓN RESPONSIVA ---
+        st.markdown("---")
+        st.write("**📊 Resumen**")
+        st.dataframe(pd.DataFrame(resumen_jornada), use_container_width=True, hide_index=True)
+        
+        st.write("**📸 Evidencias (Toca para pantalla completa)**")
+        df_gal = df_f[df_f['url_limpia'].notna()]
+        if not df_gal.empty:
+            galeria_html = '<div class="galeria-grid">'
+            for _, row in df_gal.iterrows():
+                galeria_html += f'''
+                <div class="foto-card">
+                    <img src="{row['url_limpia']}" class="foto-img" onclick="window.open('{row['url_limpia']}', '_blank')">
+                    <div class="foto-pie">{row['Usuario']} - {row['Hora'][:5]}</div>
+                </div>
+                '''
+            galeria_html += '</div>'
+            st.markdown(galeria_html, unsafe_allow_html=True)
 
 with tab2:
     st.header("Cierre")
