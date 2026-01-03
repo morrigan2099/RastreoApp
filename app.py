@@ -130,7 +130,7 @@ with tab1:
         
         st.metric("📦 Paquetes/Evidencias hoy", len(df_fotos))
         
-        # 4. MAPA FORENSE DE PRECISIÓN (Iconos: Pin de Inicio y Bandera de Meta)
+        # 4. MAPA FORENSE LIMPIO (Menos flechas, Emojis Reales y Marcadores Inteligentes)
         if not df_gps.empty and 'Latitud' in df_gps.columns and 'Longitud' in df_gps.columns:
             # A. Limpieza
             df_gps['Latitud'] = pd.to_numeric(df_gps['Latitud'], errors='coerce')
@@ -142,80 +142,72 @@ with tab1:
 
             if not df_gps.empty:
                 st.write("### 📍 Panel de Control de Rutas")
-                tipo_mapa = st.radio("Fondo:", ["🌎 Satélite", "🗺️ Calles", "🌑 Oscuro"], horizontal=True, label_visibility="collapsed")
-
-                # Configuración de Fondo
-                if "Satélite" in tipo_mapa:
-                    tiles_url = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
-                    attr_txt = 'Esri World Imagery'
-                elif "Oscuro" in tipo_mapa:
-                    tiles_url = 'https://cartodb-basemaps-{s}.global.ssl.fastly.net/dark_all/{z}/{x}/{y}.png'
-                    attr_txt = 'CartoDB Dark'
-                else:
-                    tiles_url = 'OpenStreetMap'
-                    attr_txt = 'OpenStreetMap'
-
-                # Mapa base
+                
+                # --- LÓGICA DE CAPAS POR REPARTIDOR ---
                 lat_center = df_gps['Latitud'].mean()
                 lon_center = df_gps['Longitud'].mean()
-                m = folium.Map(location=[lat_center, lon_center], zoom_start=18, tiles=None)
+                m = folium.Map(location=[lat_center, lon_center], zoom_start=18)
 
-                if tiles_url != 'OpenStreetMap':
-                    folium.TileLayer(tiles=tiles_url, attr=attr_txt, name=tipo_mapa, control=False).add_to(m)
-                else:
-                    folium.TileLayer('OpenStreetMap', control=False).add_to(m)
+                # Capa Satélite por defecto (Esri)
+                folium.TileLayer(
+                    tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+                    attr='Esri', name='Satélite', overlay=False
+                ).add_to(m)
 
-                # Función para calcular color inverso
-                def color_inverso(hex_color):
-                    hex_color = hex_color.lstrip('#')
-                    rgb = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
-                    inv_rgb = tuple(255 - c for c in rgb)
-                    return '#%02x%02x%02x' % inv_rgb
-
-                # --- LÓGICA DE CAPAS POR REPARTIDOR ---
                 repartidores = df_gps['Usuario'].unique() if 'Usuario' in df_gps.columns else ['Desconocido']
                 colores_ruta = ['#FFFF00', '#00FFFF', '#FF00FF', '#00FF00', '#FF4500', '#007BFF', '#FFFFFF']
 
                 for i, nombre in enumerate(repartidores):
+                    # Usamos el emoji normal pedido
                     capa_rep = folium.FeatureGroup(name=f"🙋🏻‍♂️ {nombre}") 
                     color_u = colores_ruta[i % len(colores_ruta)]
-                    color_inv = color_inverso(color_u)
                     
                     datos_u = df_gps[df_gps['Usuario'] == nombre]
                     coords = datos_u[['Latitud', 'Longitud']].values.tolist()
                     
                     if len(coords) > 1:
-                        # 1. RUTA (Garabato)
+                        # 1. LA LÍNEA (El garabato) - Fina
                         linea = folium.PolyLine(
-                            locations=coords, color=color_u, weight=2, opacity=0.8, no_clip=True
+                            locations=coords, color=color_u, weight=2, opacity=0.8
                         ).add_to(capa_rep)
 
-                        # 2. FLECHAS (Espaciadas)
+                        # 2. FLECHAS CONTROLADAS (Mucho menos flechas)
+                        # Aumentamos drásticamente el espacio entre flechas
                         folium.plugins.PolyLineTextPath(
-                            linea, '     ►     ', 
+                            linea, '          ►          ', 
                             repeat=True, offset=8, 
-                            attributes={'fill': color_u, 'font-weight': 'bold', 'font-size': '16'}
+                            attributes={'fill': color_u, 'font-weight': 'bold', 'font-size': '18'}
                         ).add_to(capa_rep)
 
-                        # 3. ICONO DE INICIO (PIN)
+                        # 3. LÓGICA INICIO/FIN (Si son iguales, se desplazan un poco)
+                        punto_inicio = coords[0]
+                        punto_fin = coords[-1]
+                        
+                        # Si están muy cerca (mismo lugar), movemos el de fin un poquito para que se vean ambos
+                        distancia_extremos = abs(punto_inicio[0] - punto_fin[0]) + abs(punto_inicio[1] - punto_fin[1])
+                        offset_fin = [0, 0]
+                        if distancia_extremos < 0.0001:
+                            offset_fin = [0.00005, 0.00005] # Desplazamiento mínimo de seguridad
+
+                        # MARCADOR INICIO (📌)
                         folium.Marker(
-                            location=coords[0],
-                            icon=folium.Icon(color='white', icon_color=color_inv, icon='play', prefix='fa'),
-                            popup=f"🚀 SALIDA: {nombre}<br>Hora: {datos_u.iloc[0].get('Hora','-')}"
+                            location=punto_inicio,
+                            icon=folium.DivIcon(html=f"""<div style="font-size: 24pt">📌</div>"""),
+                            popup=f"📍 SALIDA: {nombre}<br>Hora: {datos_u.iloc[0].get('Hora','-')}"
                         ).add_to(capa_rep)
 
-                        # 4. ICONO DE FIN (BANDERA)
+                        # MARCADOR FIN (🏁)
                         folium.Marker(
-                            location=coords[-1],
-                            icon=folium.Icon(color='white', icon_color=color_inv, icon='flag-checkered', prefix='fa'),
+                            location=[punto_fin[0] + offset_fin[0], punto_fin[1] + offset_fin[1]],
+                            icon=folium.DivIcon(html=f"""<div style="font-size: 24pt">🏁</div>"""),
                             popup=f"🏁 LLEGADA: {nombre}<br>Hora: {datos_u.iloc[-1].get('Hora','-')}"
                         ).add_to(capa_rep)
 
-                        # 5. HITOS GPS (Solo para referencia)
+                        # 4. HITOS GPS (Casi invisibles)
                         for _, row in datos_u.iterrows():
                             folium.CircleMarker(
                                 location=[row['Latitud'], row['Longitud']], radius=1,
-                                color=color_u, fill=True, fill_opacity=0.3
+                                color=color_u, fill=True, fill_opacity=0.2
                             ).add_to(capa_rep)
 
                     capa_rep.add_to(m)
