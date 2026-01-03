@@ -1,3 +1,4 @@
+import pydeck as pdk
 import streamlit as st
 import pandas as pd
 from pyairtable import Api
@@ -140,7 +141,39 @@ with tab1:
             df_gps = df_gps.dropna(subset=['Latitud', 'Longitud'])
             
             if not df_gps.empty:
-                st.map(df_gps, latitude='Latitud', longitude='Longitud')
+                import pydeck as pdk # Asegúrate de importar esto arriba, o déjalo aquí
+
+            # 1. Calcular el centro del mapa automáticamente
+            lat_center = df_gps['Latitud'].mean()
+            lon_center = df_gps['Longitud'].mean()
+
+            # 2. Configurar la Capa de Puntos (Scatterplot)
+            layer = pdk.Layer(
+                "ScatterplotLayer",
+                df_gps,
+                get_position='[Longitud, Latitud]', # Ojo: PyDeck pide Longitud primero
+                get_color='[0, 100, 255, 160]',      # Azul brillante con transparencia
+                get_radius=8,                        # Radio en METROS (ajusta esto si quieres más chicos)
+                pickable=True,                       # Permite pasar el mouse y ver datos
+                radius_min_pixels=3,                 # Tamaño mínimo en pantalla (para que no desaparezcan al alejar)
+                radius_max_pixels=10,                # Tamaño máximo
+            )
+
+            # 3. Configurar la Vista Inicial
+            view_state = pdk.ViewState(
+                latitude=lat_center,
+                longitude=lon_center,
+                zoom=15, # Zoom cercano
+                pitch=0, # Inclinación (0 es vista desde arriba, como mapa 2D)
+            )
+
+            # 4. Renderizar el Mapa
+            st.pydeck_chart(pdk.Deck(
+                map_style='mapbox://styles/mapbox/light-v9', # Estilo de mapa limpio
+                layers=[layer],
+                initial_view_state=view_state,
+                tooltip={"text": "Chofer: {Usuario}\nHora: {Hora}"} # Lo que sale al pasar el mouse
+            ))
             else:
                 st.warning("Coordenadas inválidas detectadas.")
         else:
