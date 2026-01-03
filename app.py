@@ -17,27 +17,29 @@ from folium.plugins import PolyLineTextPath
 # ==========================================================
 st.set_page_config(page_title="Monitor 🗞️", layout="wide")
 
-# CSS para Título y Sidebar
+# CSS: Título Adaptable, Sidebar y Grid Móvil
 st.markdown("""
     <style>
+    /* Ocultar elementos de Streamlit para look "App" */
     header[data-testid="stHeader"] { background: rgba(0,0,0,0) !important; }
     header[data-testid="stHeader"] button { color: var(--text-color) !important; }
     footer {visibility: hidden;}
     [data-testid="stDecoration"] {display:none;}
     
-    .titulo-placeholder {
-        width: 100%;
-        margin-left: 35px;
-        margin-top: 15px;
+    /* Título que se achica si no cabe (Clamp) */
+    .titulo-smart {
+        margin-left: 40px; 
+        margin-top: 10px;
         font-weight: bold;
         white-space: nowrap;
-        font-size: clamp(16px, 5vw, 24px);
+        font-size: clamp(18px, 6vw, 26px); /* Mínimo 18px, Ideal 6% pantalla, Máx 26px */
         color: var(--text-color);
     }
     
-    /* Forzar que las columnas no se apilen en móvil si son solo 2 */
+    /* Regla de Oro: Forzar columnas al 50% en Móvil para ver 2 fotos */
     [data-testid="column"] {
-        min-width: 45% !important;
+        min-width: 40% !important;
+        flex: 1 1 40% !important;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -63,19 +65,38 @@ try:
     api = Api(AIRTABLE_API_KEY)
     table = api.table(AIRTABLE_BASE_ID, AIRTABLE_TABLE_NAME)
 except Exception as e:
-    st.error(f"❌ Error: {e}")
+    st.error(f"❌ Error Secrets: {e}")
     st.stop()
 
 # ==========================================================
-# FUNCIONES
+# FUNCIONES (CORREGIDAS)
 # ==========================================================
 def obtener_url_final(valor):
-    if not valor or str(valor).lower() in ['nan', 'none', '', '[]']: return None
+    """
+    Extrae la URL de la imagen de Airtable de forma robusta.
+    Prioridad: Lista de Airtable > String directo > Regex
+    """
+    if not valor: return None
+    
+    # CASO 1: Formato nativo de Airtable (Lista de diccionarios)
+    if isinstance(valor, list) and len(valor) > 0:
+        if isinstance(valor[0], dict):
+            return valor[0].get("url")
+    
+    # Convertimos a string para casos raros
     val_str = str(valor).strip()
+    if val_str.lower() in ['nan', 'none', '', '[]']: return None
+
+    # CASO 2: URL Directa
+    if val_str.startswith('http'): 
+        return val_str
+    
+    # CASO 3: Regex (solo si lo anterior falló)
     if '(' in val_str and ')' in val_str:
         urls = re.findall(r'\((https?://[^\)]+)\)', val_str)
         if urls: return urls[0]
-    return val_str if val_str.startswith('http') else None
+        
+    return None
 
 def calcular_distancia(lat1, lon1, lat2, lon2):
     R = 6371.0
@@ -86,7 +107,7 @@ def calcular_distancia(lat1, lon1, lat2, lon2):
 # ==========================================================
 # UI - MONITOR 🗞️
 # ==========================================================
-st.markdown('<div class="titulo-placeholder">🗞️ Monitor de Reparto Folletos</div>', unsafe_allow_html=True)
+st.markdown('<div class="titulo-smart">🗞️ Monitor Reparto Folletos</div>', unsafe_allow_html=True)
 
 tab1, tab2 = st.tabs(["📍 Mapa", "☁️ Cierre"])
 
@@ -98,6 +119,8 @@ with tab1:
 
     df = pd.DataFrame([r["fields"] for r in records])
     df.columns = [c.lower() for c in df.columns]
+    
+    # Renombrado inteligente para encontrar la columna de fotos
     rename = {c: "Latitud" if "lat" in c else "Longitud" if "lon" in c else "Usuario" if "usu" in c else "Hora" if "hora" in c else "Foto" if ("foto" in c and "etiq" not in c) else c for c in df.columns}
     df = df.rename(columns=rename)
     
@@ -105,10 +128,15 @@ with tab1:
     df["Longitud"] = pd.to_numeric(df["Longitud"], errors="coerce")
     df = df.dropna(subset=["Latitud", "Longitud"])
     
-    # --- ORDENAR ANTES DE TODO ---
+    # PROCESAMIENTO CRONOLÓGICO
     df["Hora_dt"] = pd.to_datetime(df["Hora"], errors="coerce")
-    df = df.sort_values("Hora_dt")
-    df["url_limpia"] = df["Foto"].apply(obtener_url_final)
+    df = df.sort_values("Hora_dt") # Ordenamos TODO por hora antes de empezar
+    
+    # APLICAMOS LA EXTRACCIÓN CORREGIDA
+    if "Foto" in df.columns:
+        df["url_limpia"] = df["Foto"].apply(obtener_url_final)
+    else:
+        df["url_limpia"] = None # Por si acaso no encuentra la columna
 
     with st.sidebar:
         usuarios_lista = sorted(df["Usuario"].unique().tolist())
@@ -118,63 +146,77 @@ with tab1:
 
     if sel_usuarios:
         df_f = df[df["Usuario"].isin(sel_usuarios)].copy()
-        m = folium.Map(location=[df_f["Latitud"].mean(), df_f["Longitud"].mean()], zoom_start=15, zoom_control=False)
         
-        if tipo_mapa == "Satélite":
-            folium.TileLayer(tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', attr='Esri').add_to(m)
+        # Mapa
+        if not df_f.empty:
+            m = folium.Map(location=[df_f["Latitud"].mean(), df_f["Longitud"].mean()], zoom_start=15, zoom_control=False)
+            if tipo_mapa == "Satélite":
+                folium.TileLayer(tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', attr='Esri').add_to(m)
 
-        colores = ['#FF0000', '#00FF00', '#0000FF', '#FF00FF', '#FF8C00']
-        resumen_jornada = []
+            colores = ['#FF0000', '#00FF00', '#0000FF', '#FF00FF', '#FF8C00']
+            resumen_jornada = []
 
-        for i, nombre in enumerate(sel_usuarios):
-            color = colores[i % len(colores)]
-            u_data = df_f[df_f["Usuario"] == nombre].reset_index(drop=True)
-            
-            if not u_data.empty:
-                coords = u_data[["Latitud", "Longitud"]].values.tolist()
-                dist_u = 0.0
+            for i, nombre in enumerate(sel_usuarios):
+                color = colores[i % len(colores)]
+                u_data = df_f[df_f["Usuario"] == nombre].reset_index(drop=True)
                 
-                if len(coords) > 1:
-                    linea = folium.PolyLine(coords, color=color, weight=4).add_to(m)
-                    PolyLineTextPath(linea, '   ►   ', repeat=True, offset=8, attributes={'fill': color, 'font-size': '20'}).add_to(m)
+                if not u_data.empty:
+                    # Ruta
+                    coords = u_data[["Latitud", "Longitud"]].values.tolist()
+                    dist_u = 0.0
+                    if len(coords) > 1:
+                        linea = folium.PolyLine(coords, color=color, weight=4).add_to(m)
+                        PolyLineTextPath(linea, '   ►   ', repeat=True, offset=8, attributes={'fill': color, 'font-size': '18'}).add_to(m)
 
-                ult_hito = None
-                for j, row in u_data.iterrows():
-                    if j < len(u_data) - 1:
-                        dist_u += calcular_distancia(row["Latitud"], row["Longitud"], u_data.iloc[j+1]["Latitud"], u_data.iloc[j+1]["Longitud"])
+                    ult_hito = None
+                    for j, row in u_data.iterrows():
+                        if j < len(u_data) - 1:
+                            dist_u += calcular_distancia(row["Latitud"], row["Longitud"], u_data.iloc[j+1]["Latitud"], u_data.iloc[j+1]["Longitud"])
 
-                    if ult_hito is None or (row["Hora_dt"] - ult_hito).total_seconds() >= 900:
-                        folium.Marker([row["Latitud"], row["Longitud"]], 
-                                      icon=folium.DivIcon(html=f'<div style="font-size:20pt;">📍</div>'),
-                                      popup=f"{nombre}: {row['Hora']}").add_to(m)
-                        ult_hito = row["Hora_dt"]
+                        # Pin 15 mins (Restaurado)
+                        if ult_hito is None or (row["Hora_dt"] - ult_hito).total_seconds() >= 900:
+                            folium.Marker([row["Latitud"], row["Longitud"]], 
+                                          icon=folium.DivIcon(html=f'<div style="font-size:18pt; filter:drop-shadow(1px 1px 1px black);">📍</div>'),
+                                          popup=f"{nombre}: {row['Hora']}").add_to(m)
+                            ult_hito = row["Hora_dt"]
 
-                    if row['url_limpia']:
-                        folium.Marker([row["Latitud"], row["Longitud"]],
-                            icon=folium.DivIcon(html=f'<div style="width:45px; height:45px; border:2px solid {color}; border-radius:5px; overflow:hidden;"><img src="{row["url_limpia"]}" style="width:100%; height:100%; object-fit:cover;"></div>'),
-                            popup=folium.Popup(f'<img src="{row["url_limpia"]}" width="150">', max_width=150)).add_to(m)
+                        # Miniatura Mapa
+                        if row['url_limpia']:
+                            folium.Marker([row["Latitud"], row["Longitud"]],
+                                icon=folium.DivIcon(html=f'<div style="width:40px; height:40px; border:2px solid {color}; border-radius:4px; overflow:hidden;"><img src="{row["url_limpia"]}" style="width:100%; height:100%; object-fit:cover;"></div>'),
+                                popup=folium.Popup(f'<img src="{row["url_limpia"]}" width="150">', max_width=150)).add_to(m)
 
-                r_ini, r_fin = u_data.iloc[0], u_data.iloc[-1]
-                off = 0.00009 if (r_ini["Latitud"] == r_fin["Latitud"]) else 0
-                folium.Marker([r_ini["Latitud"], r_ini["Longitud"]], icon=folium.DivIcon(html='<div style="font-size:22pt;">📌</div>'), popup=f"Inicio: {nombre}").add_to(m)
-                folium.Marker([r_fin["Latitud"]+off, r_fin["Longitud"]+off], icon=folium.DivIcon(html='<div style="font-size:22pt;">🏁</div>'), popup=f"Fin: {nombre}").add_to(m)
-                resumen_jornada.append({"Repartidor": nombre, "📸": u_data['url_limpia'].notna().sum(), "Dist.": f"{dist_u:.2f} km"})
+                    # Inicio / Fin
+                    r_ini, r_fin = u_data.iloc[0], u_data.iloc[-1]
+                    off = 0.00009 if (abs(r_ini["Latitud"] - r_fin["Latitud"]) < 0.00005) else 0
+                    
+                    folium.Marker([r_ini["Latitud"], r_ini["Longitud"]], 
+                        icon=folium.DivIcon(html='<div style="font-size:22pt; filter:drop-shadow(2px 2px 2px black);">📌</div>'), 
+                        popup=f"Inicio: {r_ini['Hora']}", z_index_offset=2000).add_to(m)
+                        
+                    folium.Marker([r_fin["Latitud"]+off, r_fin["Longitud"]+off], 
+                        icon=folium.DivIcon(html='<div style="font-size:22pt; filter:drop-shadow(2px 2px 2px black);">🏁</div>'), 
+                        popup=f"Fin: {r_fin['Hora']}", z_index_offset=2000).add_to(m)
+                        
+                    resumen_jornada.append({"Repartidor": nombre, "📸": u_data['url_limpia'].notna().sum(), "Dist.": f"{dist_u:.2f} km"})
 
-        st_folium(m, width="100%", height=400, returned_objects=[])
+            st_folium(m, width="100%", height=400, returned_objects=[])
 
-        st.markdown("---")
-        st.write("**📸 Evidencias (Cronológico)**")
-        df_gal = df_f[df_f['url_limpia'].notna()]
-        
-        if not df_gal.empty:
-            # USAMOS 2 COLUMNAS PARA ASEGURAR GRID EN MÓVIL
-            cols = st.columns(2) 
-            for i, (_, row) in enumerate(df_gal.iterrows()):
-                with cols[i % 2]:
-                    st.image(row['url_limpia'], caption=f"{row['Usuario'].split()[0]} {row['Hora'][:5]}", use_container_width=True)
-        
-        st.write("**📊 Resumen**")
-        st.dataframe(pd.DataFrame(resumen_jornada), use_container_width=True, hide_index=True)
+            st.markdown("---")
+            st.write("**📊 Resumen**")
+            st.dataframe(pd.DataFrame(resumen_jornada), use_container_width=True, hide_index=True)
+            
+            st.write("**📸 Evidencias (Cronológico)**")
+            df_gal = df_f[df_f['url_limpia'].notna()]
+            
+            if not df_gal.empty:
+                # AQUÍ ESTÁ EL SECRETO DE LAS 2 COLUMNAS
+                # Usamos st.columns(2). Como tenemos CSS que fuerza min-width: 40%, 
+                # en móvil caben exactamente 2.
+                cols = st.columns(2) 
+                for i, (_, row) in enumerate(df_gal.iterrows()):
+                    with cols[i % 2]:
+                        st.image(row['url_limpia'], caption=f"{row['Usuario'].split()[0]} {row['Hora'][:5]}", use_container_width=True)
 
 with tab2:
     st.header("Cierre")
