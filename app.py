@@ -22,22 +22,17 @@ st.set_page_config(page_title="Monitor de Reparto Pro", layout="wide")
 # ==========================================================
 # CREDENCIALES (USA LAS TUYAS)
 # ==========================================================
-# ==========================================
-# 🔐 ZONA DE CONFIGURACIÓN
-# ==========================================
 
-# 1. AIRTABLE (Genera uno nuevo por seguridad)
 AIRTABLE_API_KEY = "patyclv7hDjtGHB0F.19829008c5dee053cba18720d38c62ed86fa76ff0c87ad1f2d71bfe853ce9783"
 AIRTABLE_BASE_ID = "appglio1RmA0AoWTP"
 AIRTABLE_TABLE_NAME = "Rutas_Vivo"
 
-# 2. CLOUDINARY (Genera uno nuevo por seguridad)
 CLOUDINARY_CLOUD_NAME = "dlj0pdv6i"
 CLOUDINARY_API_KEY = "847419449273122"
-CLOUDINARY_API_SECRET = "i0cJCELeYVAosiBL_ltjHkM_FV0" 
+CLOUDINARY_API_SECRET = "i0cJCELeYVAosiBL_ltjHkM_FV0"
 
-# 3. GOOGLE SHEETS
-# Instrucción: Pega el JSON nuevo. El código limpiará los errores de formato automático.
+EMAIL_ADMIN = "morrigan2099@gmail.com"
+
 GOOGLE_JSON_RAW = """
 {
   "type": "service_account",
@@ -53,9 +48,6 @@ GOOGLE_JSON_RAW = """
   "universe_domain": "googleapis.com"
 }
 """
-
-# 4. ADMIN
-EMAIL_ADMIN = "morrigan2099@gmail.com"
 
 # ==========================================================
 # CONEXIONES
