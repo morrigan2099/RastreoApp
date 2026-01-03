@@ -130,9 +130,9 @@ with tab1:
         
         st.metric("📦 Paquetes/Evidencias hoy", len(df_fotos))
         
-        # 4. MAPA FORENSE LIMPIO (Menos flechas, Emojis Reales y Marcadores Inteligentes)
+        # 4. MAPA FORENSE LIMPIO (Flechas mínimas y Emojis 📌 🏁)
         if not df_gps.empty and 'Latitud' in df_gps.columns and 'Longitud' in df_gps.columns:
-            # A. Limpieza
+            # A. Limpieza de datos
             df_gps['Latitud'] = pd.to_numeric(df_gps['Latitud'], errors='coerce')
             df_gps['Longitud'] = pd.to_numeric(df_gps['Longitud'], errors='coerce')
             df_gps = df_gps.dropna(subset=['Latitud', 'Longitud'])
@@ -143,12 +143,11 @@ with tab1:
             if not df_gps.empty:
                 st.write("### 📍 Panel de Control de Rutas")
                 
-                # --- LÓGICA DE CAPAS POR REPARTIDOR ---
                 lat_center = df_gps['Latitud'].mean()
                 lon_center = df_gps['Longitud'].mean()
                 m = folium.Map(location=[lat_center, lon_center], zoom_start=18)
 
-                # Capa Satélite por defecto (Esri)
+                # Capa Satélite Esri
                 folium.TileLayer(
                     tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
                     attr='Esri', name='Satélite', overlay=False
@@ -158,7 +157,6 @@ with tab1:
                 colores_ruta = ['#FFFF00', '#00FFFF', '#FF00FF', '#00FF00', '#FF4500', '#007BFF', '#FFFFFF']
 
                 for i, nombre in enumerate(repartidores):
-                    # Usamos el emoji normal pedido
                     capa_rep = folium.FeatureGroup(name=f"🙋🏻‍♂️ {nombre}") 
                     color_u = colores_ruta[i % len(colores_ruta)]
                     
@@ -166,54 +164,53 @@ with tab1:
                     coords = datos_u[['Latitud', 'Longitud']].values.tolist()
                     
                     if len(coords) > 1:
-                        # 1. LA LÍNEA (El garabato) - Fina
+                        # 1. LA RUTA (El garabato)
                         linea = folium.PolyLine(
                             locations=coords, color=color_u, weight=2, opacity=0.8
                         ).add_to(capa_rep)
 
-                        # 2. FLECHAS CONTROLADAS (Mucho menos flechas)
-                        # Aumentamos drásticamente el espacio entre flechas
+                        # 2. FLECHAS ULTRALIGERAS (1/5 del total anterior)
+                        # Hemos añadido un espacio masivo para que apenas aparezcan unas cuantas
                         folium.plugins.PolyLineTextPath(
-                            linea, '          ►          ', 
+                            linea, '                              ►                              ', 
                             repeat=True, offset=8, 
-                            attributes={'fill': color_u, 'font-weight': 'bold', 'font-size': '18'}
+                            attributes={'fill': color_u, 'font-weight': 'bold', 'font-size': '20'}
                         ).add_to(capa_rep)
 
-                        # 3. LÓGICA INICIO/FIN (Si son iguales, se desplazan un poco)
+                        # 3. MARCADORES DE EXTREMOS
                         punto_inicio = coords[0]
                         punto_fin = coords[-1]
                         
-                        # Si están muy cerca (mismo lugar), movemos el de fin un poquito para que se vean ambos
-                        distancia_extremos = abs(punto_inicio[0] - punto_fin[0]) + abs(punto_inicio[1] - punto_fin[1])
-                        offset_fin = [0, 0]
-                        if distancia_extremos < 0.0001:
-                            offset_fin = [0.00005, 0.00005] # Desplazamiento mínimo de seguridad
+                        # Desplazamiento si inicio y fin son iguales
+                        distancia = abs(punto_inicio[0]-punto_fin[0]) + abs(punto_inicio[1]-punto_fin[1])
+                        off = [0.00005, 0.00005] if distancia < 0.0001 else [0, 0]
 
-                        # MARCADOR INICIO (📌)
+                        # Marcador 📌 Inicio
                         folium.Marker(
                             location=punto_inicio,
-                            icon=folium.DivIcon(html=f"""<div style="font-size: 24pt">📌</div>"""),
+                            icon=folium.DivIcon(html=f'<div style="font-size: 25pt; filter: drop-shadow(2px 2px 2px black);">📌</div>'),
                             popup=f"📍 SALIDA: {nombre}<br>Hora: {datos_u.iloc[0].get('Hora','-')}"
                         ).add_to(capa_rep)
 
-                        # MARCADOR FIN (🏁)
+                        # Marcador 🏁 Fin
                         folium.Marker(
-                            location=[punto_fin[0] + offset_fin[0], punto_fin[1] + offset_fin[1]],
-                            icon=folium.DivIcon(html=f"""<div style="font-size: 24pt">🏁</div>"""),
+                            location=[punto_fin[0] + off[0], punto_fin[1] + off[1]],
+                            icon=folium.DivIcon(html=f'<div style="font-size: 25pt; filter: drop-shadow(2px 2px 2px black);">🏁</div>'),
                             popup=f"🏁 LLEGADA: {nombre}<br>Hora: {datos_u.iloc[-1].get('Hora','-')}"
                         ).add_to(capa_rep)
 
-                        # 4. HITOS GPS (Casi invisibles)
+                        # 4. HITOS (Puntos de referencia muy tenues)
                         for _, row in datos_u.iterrows():
                             folium.CircleMarker(
                                 location=[row['Latitud'], row['Longitud']], radius=1,
-                                color=color_u, fill=True, fill_opacity=0.2
+                                color=color_u, fill=True, fill_opacity=0.15
                             ).add_to(capa_rep)
 
                     capa_rep.add_to(m)
 
                 folium.LayerControl(collapsed=False).add_to(m)
                 st_folium(m, width=1200, height=600)
+              
 # ------------------------------------------
 # PESTAÑA 2: MOTOR DE MIGRACIÓN
 # ------------------------------------------
