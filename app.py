@@ -3,8 +3,6 @@ import pandas as pd
 from pyairtable import Api
 import gspread
 from google.oauth2.service_account import Credentials
-import cloudinary
-import cloudinary.uploader
 import folium
 import math
 import re
@@ -14,15 +12,14 @@ from folium.plugins import PolyLineTextPath
 # ==========================================================
 # CONFIGURACIÓN
 # ==========================================================
-st.set_page_config(page_title="Monitor Reparto", layout="wide")
+st.set_page_config(page_title="Siguiendo-T", layout="wide")
 
 # ==========================================================
-# CSS MAESTRO (Título ajustado, Galería 2x2 móvil)
+# CSS MAESTRO
 # ==========================================================
 st.markdown("""
 <style>
-/* 1. AJUSTES GLOBALES Y SIDEBAR */
-/* Reducir espacio superior drásticamente */
+/* 1. SIDEBAR Y LIMPIEZA */
 .block-container {
     padding-top: 1rem !important;
     padding-bottom: 0rem !important;
@@ -32,13 +29,13 @@ header[data-testid="stHeader"] button { color: var(--text-color) !important; z-i
 [data-testid="stDecoration"] { display: none !important; }
 footer { display: none !important; }
 
-/* 2. TÍTULO (Subido, agrandado y a la izquierda) */
+/* 2. TÍTULO (Ajustado) */
 .titulo-smart {
-    margin-left: 5px; /* Mínimo margen para el botón del menú */
+    margin-left: 5px; 
+    margin-top: 20px; /* Bajado un poco más */
     margin-bottom: 10px;
     text-align: left;
     font-weight: bold; 
-    /* Fuente más grande: Mínimo 22px, Ideal 7% pantalla, Máx 32px */
     font-size: clamp(22px, 7vw, 32px); 
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     color: var(--text-color);
@@ -65,7 +62,7 @@ footer { display: none !important; }
     }
 }
 
-/* 4. TARJETA DE FOTO (Sin recortes) */
+/* 4. TARJETA DE FOTO */
 .photo-card {
     border: 1px solid #ddd;
     border-radius: 6px;
@@ -80,7 +77,7 @@ footer { display: none !important; }
 .photo-card img {
     width: 100%;
     height: 185px;
-    object-fit: contain; /* AJUSTE PROPORCIONAL */
+    object-fit: contain; /* Ajuste proporcional sin recortes */
     background-color: #ababb3; /* Fondo neutro */
 }
 
@@ -140,8 +137,8 @@ def calcular_distancia(lat1, lon1, lat2, lon2):
 # ==========================================================
 # APP
 # ==========================================================
-# Nuevo Emoji y Título ajustado
-st.markdown('<div class="titulo-smart">🏃‍♂️📄 Monitor Reparto Folletos</div>', unsafe_allow_html=True)
+# Título actualizado
+st.markdown('<div class="titulo-smart">🏃‍♂️ Siguiendo-T Monitor</div>', unsafe_allow_html=True)
 
 tab1, tab2 = st.tabs(["📍 Mapa", "☁️ Cierre"])
 
@@ -195,7 +192,7 @@ with tab1:
                 
                 if len(coords) > 1:
                     linea = folium.PolyLine(coords, color=color, weight=4).add_to(m)
-                    # Flechas más pequeñas y sutiles
+                    # Flecha sutil (▶ tamaño 12)
                     PolyLineTextPath(linea, ' ▶ ', repeat=True, offset=15, attributes={'fill': color, 'font-size': '12'}).add_to(m)
 
                 ult_hito = None
@@ -210,7 +207,7 @@ with tab1:
                         ult_hito = row["Hora_dt"]
                     
                     if row['url_limpia']:
-                        # Popup controlado para la miniatura
+                        # Popup con imagen controlada (max 220px)
                         popup_html = f'<img src="{row["url_limpia"]}" style="max-width:220px; max-height:220px; object-fit:contain; border-radius:4px;">'
                         
                         folium.Marker([row["Latitud"], row["Longitud"]],
@@ -224,14 +221,11 @@ with tab1:
                 
                 stats_list.append({"Repartidor": nombre, "Fotos": u_data['url_limpia'].notna().sum(), "Dist.": f"{dist_u:.2f} km"})
 
-        # Altura del mapa a 450px
         st_folium(m, width="100%", height=450, returned_objects=[])
 
-        # --- ESTADÍSTICAS ---
         st.markdown("### 📊 Estadísticas")
         st.dataframe(pd.DataFrame(stats_list), use_container_width=True, hide_index=True)
         
-        # --- GALERÍA HTML BLINDADA (Ordenada y Proporcional) ---
         st.markdown("### 📸 Evidencias")
         df_gal = df_f[df_f['url_limpia'].notna()]
         
@@ -241,7 +235,7 @@ with tab1:
                 url = row['url_limpia']
                 user = str(row['Usuario']).split()[0].replace("<","").replace(">","")
                 hora = str(row['Hora'])[:5]
-                # HTML en una sola línea
+                # HTML compactado en una línea para evitar errores de renderizado
                 html_parts.append(f'<div class="gallery-item"><a href="{url}" target="_blank" style="text-decoration:none;"><div class="photo-card"><img src="{url}" loading="lazy"><div class="photo-caption">{user} {hora}</div></div></a></div>')
             html_parts.append('</div>')
             st.markdown("".join(html_parts), unsafe_allow_html=True)
