@@ -134,21 +134,35 @@ import math
 import pandas as pd
 import streamlit as st
 import folium
+import ast  # Para procesar formatos de texto complejos
 from streamlit_folium import st_folium
 from folium.plugins import PolyLineTextPath
 
-# --- 1. FUNCIÓN DE EXTRACCIÓN ULTRA-FLEXIBLE ---
+# --- 1. FUNCIÓN DE EXTRACCIÓN MAESTRA (A PRUEBA DE TODO) ---
 def obtener_url_final(valor):
-    if not valor or str(valor) == 'nan':
+    if not valor or str(valor).lower() == 'nan' or valor == "":
         return None
+    
     try:
-        # Airtable envía adjuntos como lista de diccionarios: [{'url': '...'}]
+        # Si el valor viene como un string que parece lista "[{'url':...}]"
+        # Esto pasa mucho en integraciones de API
+        if isinstance(valor, str) and valor.startswith('['):
+            valor = ast.literal_eval(valor)
+
+        # Si es una lista real de Airtable
         if isinstance(valor, list) and len(valor) > 0:
-            if isinstance(valor[0], dict) and 'url' in valor[0]:
-                return valor[0]['url']
-            return str(valor[0])
-        if isinstance(valor, str) and valor.startswith('http'):
-            return valor
+            item = valor[0]
+            if isinstance(item, dict):
+                return item.get('url')
+            return str(item)
+            
+        # Si es un diccionario directo
+        if isinstance(valor, dict):
+            return valor.get('url')
+            
+        # Si es una URL directa en texto
+        if isinstance(valor, str) and valor.strip().startswith('http'):
+            return valor.strip()
     except:
         pass
     return None
@@ -159,51 +173,37 @@ def calcular_distancia_real(lat1, lon1, lat2, lon2):
     a = math.sin(dlat / 2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2)**2
     return R * (2 * math.atan2(math.sqrt(a), math.sqrt(1 - a)))
 
-# --- SECCIÓN 4: MAPA Y REPORTE ---
+# --- SECCIÓN 4: MAPA ESTRATÉGICO FINAL ---
 if not df_gps.empty:
     st.markdown("---")
     
-    # Clonamos para no romper el original
-    df_temp = df_gps.copy()
-    
-    # Identificación automática de columnas por contenido o nombre
-    columnas_reales = df_temp.columns.tolist()
-    
-    # Buscamos la columna de la foto por nombre (ignorando mayúsculas)
-    c_foto = next((c for c in columnas_reales if c.lower() == 'foto'), None)
-    # Si no la encuentra por nombre exacto, busca la que contenga listas (formato attachment)
-    if not c_foto:
-        for col in columnas_reales:
-            if df_temp[col].apply(lambda x: isinstance(x, list)).any():
-                c_foto = col
-                break
+    # Mapeo manual basado en tu lista confirmada
+    # Usamos los nombres exactos de tu tabla
+    c_lat, c_lon = "Latitud", "Longitud"
+    c_user, c_hora = "Usuario", "Hora"
+    c_foto, c_etiqueta = "Foto", "Etiqueta_Foto"
 
-    c_lat = next((c for c in columnas_reales if 'lat' in c.lower()), None)
-    c_lon = next((c for c in columnas_reales if 'lon' in c.lower()), None)
-    c_user = next((c for c in columnas_reales if 'usu' in c.lower()), None)
-    c_hora = next((c for c in columnas_reales if 'hor' in c.lower()), None)
-    c_etiqueta = next((c for c in columnas_reales if 'etiq' in c.lower()), None)
-
-    # Limpieza básica
-    df_temp[c_lat] = pd.to_numeric(df_temp[c_lat], errors='coerce')
-    df_temp[c_lon] = pd.to_numeric(df_temp[c_lon], errors='coerce')
-    df_temp = df_temp.dropna(subset=[c_lat, c_lon])
+    # Limpieza y conversión
+    df_gps[c_lat] = pd.to_numeric(df_gps[c_lat], errors='coerce')
+    df_gps[c_lon] = pd.to_numeric(df_gps[c_lon], errors='coerce')
+    df_gps = df_gps.dropna(subset=[c_lat, c_lon])
     
-    if c_hora:
-        df_temp['hora_dt'] = pd.to_datetime(df_temp[c_hora], format='%H:%M:%S', errors='coerce')
-        df_temp = df_temp.sort_values(by=[c_user, 'hora_dt'])
+    if c_hora in df_gps.columns:
+        df_gps['hora_dt'] = pd.to_datetime(df_gps[c_hora], format='%H:%M:%S', errors='coerce')
+        df_gps = df_gps.sort_values(by=[c_user, 'hora_dt'])
 
-    # --- INTERFAZ ---
+    # --- INTERFAZ SIDEBAR ---
     with st.sidebar:
         st.header("⚙️ Configuración")
         tipo_mapa = st.radio("Vista", ["Calle", "Satélite"])
         modo_reporte = st.checkbox("📑 Activar Modo Reporte (PDF)")
-        usuarios = sorted(df_temp[c_user].unique().tolist())
+        usuarios = sorted(df_gps[c_user].unique().tolist())
         sel_usuarios = st.multiselect("Repartidores", usuarios, default=usuarios)
 
-    df_f = df_temp[df_temp[c_user].isin(sel_usuarios)]
+    df_f = df_gps[df_gps[c_user].isin(sel_usuarios)]
 
     if not df_f.empty:
+        # Mapa centrado
         m = folium.Map(location=[df_f[c_lat].mean(), df_f[c_lon].mean()], zoom_start=15, zoom_control=False)
         
         if tipo_mapa == "Satélite":
@@ -222,18 +222,21 @@ if not df_gps.empty:
             if not u_data.empty:
                 coords = u_data[[c_lat, c_lon]].values.tolist()
                 
-                # 1. RUTA (Glow y flechas minimalistas)
+                # 1. TRAYECTO (Glow negro + Color + Flechas mínimas)
                 if len(coords) > 1:
-                    folium.PolyLine(coords, color='black', weight=6, opacity=0.4).add_to(m)
+                    folium.PolyLine(coords, color='black', weight=6, opacity=0.4).add_to(m) # GLOW
                     linea = folium.PolyLine(coords, color=color, weight=2.5).add_to(m)
-                    PolyLineTextPath(linea, '                    ►                    ', repeat=True, offset=8, 
+                    
+                    # Pocas flechas (espacio masivo)
+                    PolyLineTextPath(linea, '                        ►                        ', repeat=True, offset=8, 
                                      attributes={'fill': color, 'font-weight': 'bold', 'font-size': '20', 'stroke': 'black', 'stroke-width': '0.5'}).add_to(m)
 
-                # 2. HITOS, PARADAS Y FOTOS
+                # 2. PROCESAMIENTO POR PUNTO
                 ult_hito = None
                 for j in range(len(u_data)):
                     row = u_data.iloc[j]
                     
+                    # Kilometraje y Banderas Rojas 🚩
                     if j < len(u_data) - 1:
                         p_next = u_data.iloc[j+1]
                         dist_total += calcular_distancia_real(row[c_lat], row[c_lon], p_next[c_lat], p_next[c_lon])
@@ -242,24 +245,28 @@ if not df_gps.empty:
                             folium.Marker([row[c_lat], row[c_lon]], icon=folium.DivIcon(html='<div style="font-size:20pt">🚩</div>'),
                                           popup=f"🛑 Parada: {int(t_parada)} min").add_to(m)
 
+                    # Hitos Temporales 📍
                     if ult_hito is None or (row['hora_dt'] - ult_hito).total_seconds() >= 900:
-                        folium.Marker([row[c_lat], row[c_lon]], icon=folium.DivIcon(html=f'<div style="text-align:center;"><div style="font-size:16pt;filter:drop-shadow(1px 1px 1px black);">📍</div><div style="font-size:8pt;color:white;background:rgba(0,0,0,0.7);padding:1px 3px;border-radius:3px;">{row[c_hora][:5]}</div></div>')).add_to(m)
+                        folium.Marker([row[c_lat], row[c_lon]], icon=folium.DivIcon(html=f'<div style="text-align:center;"><div style="font-size:16pt;filter:drop-shadow(1px 1px 1px black);">📍</div><div style="font-size:8pt;color:white;background:rgba(0,0,0,0.7);padding:1px 3px;border-radius:3px;font-weight:bold;">{row[c_hora][:5]}</div></div>')).add_to(m)
                         ult_hito = row['hora_dt']
 
-                    # --- MINIATURAS EN MAPA ---
-                    if c_foto:
-                        url_img = obtener_url_final(row[c_foto])
-                        if url_img:
-                            folium.Marker([row[c_lat], row[c_lon]],
-                                icon=folium.DivIcon(html=f'<div style="width:50px;height:50px;border:2px solid {color};background:white;box-shadow:2px 2px 5px black;padding:2px;"><img src="{url_img}" width="46" height="46" style="object-fit:cover;"></div>'),
-                                popup=folium.Popup(f'<img src="{url_img}" width="250">', max_width=250)).add_to(m)
+                    # 3. FOTOS EN MAPA (Miniaturas con Sombra)
+                    url_img = obtener_url_final(row.get(c_foto))
+                    if url_img:
+                        folium.Marker(
+                            [row[c_lat], row[c_lon]],
+                            icon=folium.DivIcon(html=f'<div style="width:50px;height:50px;border:2px solid {color};background:white;box-shadow:2px 2px 5px black;padding:2px;"><img src="{url_img}" width="46" height="46" style="object-fit:cover;"></div>'),
+                            popup=folium.Popup(f'<img src="{url_img}" width="250">', max_width=250)
+                        ).add_to(m)
 
-                # INICIO Y FIN
-                folium.Marker(coords[0], icon=folium.DivIcon(html='<div style="font-size:26pt;filter:drop-shadow(2px 2px 2px black);">📌</div>')).add_to(m)
-                folium.Marker(coords[-1], icon=folium.DivIcon(html='<div style="font-size:26pt;filter:drop-shadow(2px 2px 2px black);">🏁</div>')).add_to(m)
+                # 4. INICIO Y FIN (Con sombra negra)
+                r_ini, r_fin = u_data.iloc[0], u_data.iloc[-1]
+                folium.Marker([r_ini[c_lat], r_ini[c_lon]], icon=folium.DivIcon(html='<div style="font-size:26pt;filter:drop-shadow(2px 2px 2px black);">📌</div>'), popup=f"SALIDA: {r_ini[c_hora]}").add_to(m)
+                folium.Marker([r_fin[c_lat]+0.00002, r_fin[c_lon]+0.00002], icon=folium.DivIcon(html='<div style="font-size:26pt;filter:drop-shadow(2px 2px 2px black);">🏁</div>'), popup=f"LLEGADA: {r_fin[c_hora]}").add_to(m)
 
-                resumen.append({"Repartidor": nombre, "Salida": u_data.iloc[0][c_hora], "Llegada": u_data.iloc[-1][c_hora], "KM": f"{dist_total:.2f} km"})
+                resumen.append({"Repartidor": nombre, "Salida": r_ini[c_hora], "Llegada": r_fin[c_hora], "KM": f"{dist_total:.2f} km"})
 
+        # Renderizar
         m.fit_bounds(df_f[[c_lat, c_lon]].values.tolist())
         st_folium(m, width="100%", height=650, returned_objects=[])
 
@@ -268,25 +275,25 @@ if not df_gps.empty:
             st.table(pd.DataFrame(resumen))
             st.write("### 📸 Galería de Testigos")
             
-            # Recolectar fotos
-            fotos_encontradas = []
-            if c_foto:
-                for _, r in df_f.iterrows():
-                    u = obtener_url_final(r[c_foto])
-                    if u:
-                        fotos_encontradas.append({"url": u, "user": r[c_user], "hora": r[c_hora], "tag": r.get(c_etiqueta, '')})
-
-            if fotos_encontradas:
+            # Galería de Fotos filtrada
+            filas_con_url = []
+            for _, r in df_f.iterrows():
+                u_galeria = obtener_url_final(r.get(c_foto))
+                if u_galeria:
+                    filas_con_url.append({
+                        "url": u_galeria, 
+                        "user": r[c_user], 
+                        "hora": r[c_hora], 
+                        "etiq": r.get(c_etiqueta, "")
+                    })
+            
+            if filas_con_url:
                 cols_g = st.columns(4)
-                for idx, f in enumerate(fotos_encontradas):
+                for idx, f in enumerate(filas_con_url):
                     with cols_g[idx % 4]:
-                        st.image(f["url"], caption=f"{f['user']} - {f['tag']} ({f['hora']})")
+                        st.image(f["url"], caption=f"{f['user']} - {f['etiq']} ({f['hora']})")
             else:
-                st.error(f"No se pudieron extraer fotos. La columna detectada como adjunto es: '{c_foto}'")
-                st.write("Columnas disponibles en tu tabla:", columnas_reales)
-
-    else:
-        st.info("Selecciona repartidores.")
+                st.warning("No se pudieron visualizar las fotos. Verifica los permisos de los archivos en Airtable.")
               
 # ------------------------------------------
 # PESTAÑA 2: MOTOR DE MIGRACIÓN
