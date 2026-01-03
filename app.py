@@ -17,37 +17,61 @@ from folium.plugins import PolyLineTextPath
 # ==========================================================
 st.set_page_config(page_title="Monitor 🗞️", layout="wide")
 
-# --- CSS RESPONSIVO (Media Queries) ---
+# --- CSS RESPONSIVO MAESTRO ---
 st.markdown("""
     <style>
-    /* --- CONFIGURACIÓN PARA ESCRITORIO (Por defecto) --- */
-    .titulo-dinamico {
-        font-size: 32px;
+    /* Estilo del Título Dinámico */
+    .titulo-contenedor {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 10px;
+    }
+    .titulo-texto {
         font-weight: bold;
-        margin-bottom: 20px;
+        color: #31333F;
     }
     
-    /* --- CONFIGURACIÓN PARA MÓVIL (Pantallas menores a 800px) --- */
-    @media only screen and (max-width: 800px) {
-        .titulo-dinamico {
-            font-size: 18px !important;
-            white-space: nowrap !important;
-            margin-bottom: 10px !important;
+    /* Configuración para Escritorio */
+    @media (min-width: 800px) {
+        .titulo-texto { font-size: 32px; }
+        .galeria-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
         }
-        /* Forzar 2 columnas en la galería */
-        [data-testid="column"] {
-            width: 48% !important;
-            flex: 1 1 45% !important;
-            min-width: 45% !important;
+    }
+
+    /* Configuración para Móvil */
+    @media (max-width: 799px) {
+        .titulo-texto { font-size: 18px; white-space: nowrap; }
+        .galeria-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 8px;
         }
-        /* Ajustar espaciado de bloques horizontales */
-        [data-testid="stHorizontalBlock"] {
-            gap: 5px !important;
-        }
-        /* Reducir espacio superior */
-        .block-container {
-            padding-top: 1rem !important;
-        }
+        .block-container { padding-top: 1rem !important; }
+    }
+
+    /* Estilo de las fotos en la galería */
+    .foto-card {
+        width: 100%;
+        border-radius: 8px;
+        overflow: hidden;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        background: white;
+    }
+    .foto-img {
+        width: 100%;
+        aspect-ratio: 1 / 1;
+        object-fit: cover;
+        display: block;
+    }
+    .foto-pie {
+        font-size: 10px;
+        padding: 5px;
+        text-align: center;
+        color: #666;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -105,9 +129,14 @@ def calcular_distancia(lat1, lon1, lat2, lon2):
 # ==========================================================
 # UI - MONITOR 🗞️
 # ==========================================================
-st.markdown('<div class="titulo-dinamico">🗞️ Monitor de Reparto Folletos</div>', unsafe_allow_html=True)
+st.markdown(f'''
+    <div class="titulo-contenedor">
+        <span style="font-size: 24px;">🗞️</span>
+        <span class="titulo-texto">Monitor de Reparto Folletos</span>
+    </div>
+''', unsafe_allow_html=True)
 
-tab1, tab2 = st.tabs(["📍 Mapa en Vivo", "☁️ Cierre del Día"])
+tab1, tab2 = st.tabs(["📍 Mapa en Vivo", "☁️ Cierre"])
 
 with tab1:
     records = table.all()
@@ -129,7 +158,7 @@ with tab1:
     df["url_limpia"] = df["Foto"].apply(obtener_url_final)
 
     with st.sidebar:
-        st.header("⚙️ Config")
+        st.header("⚙️ Filtros")
         usuarios_lista = sorted(df["Usuario"].unique().tolist())
         sel_usuarios = st.multiselect("Repartidores", usuarios_lista, default=usuarios_lista)
         tipo_mapa = st.radio("Capa", ["Calle", "Satélite"])
@@ -153,13 +182,13 @@ with tab1:
                 coords = u_data[["Latitud", "Longitud"]].values.tolist()
                 dist_u = 0.0
                 
-                # RUTA
                 if len(coords) > 1:
                     linea = folium.PolyLine(coords, color=color, weight=4, opacity=0.8).add_to(m)
                     PolyLineTextPath(linea, '                ►                ', 
                                      repeat=True, offset=8, 
                                      attributes={'fill': color, 'font-weight': 'bold', 'font-size': '22', 'stroke': 'black', 'stroke-width': '1'}).add_to(m)
 
+                # PINES Y MINIATURAS
                 ult_hito = None
                 for j, row in u_data.iterrows():
                     if j < len(u_data) - 1:
@@ -201,22 +230,27 @@ with tab1:
                 })
 
         m.fit_bounds(df_f[["Latitud", "Longitud"]].values.tolist())
-        # Mapa con altura balanceada
-        st_folium(m, width="100%", height=450, returned_objects=[])
+        st_folium(m, width="100%", height=400, returned_objects=[])
 
         if modo_reporte:
             st.markdown("---")
-            st.write("**📊 Resumen de Jornada**")
+            st.write("**📊 Resumen**")
             st.dataframe(pd.DataFrame(resumen_jornada), use_container_width=True, hide_index=True)
             
-            st.write("**📸 Galería (Toca para ampliar)**")
+            st.write("**📸 Evidencias**")
             df_gal = df_f[df_f['url_limpia'].notna()]
             if not df_gal.empty:
-                # Usamos 4 columnas. El CSS se encargará de que en móvil se vean como 2.
-                cols = st.columns(4)
-                for idx, (_, f_row) in enumerate(df_gal.iterrows()):
-                    with cols[idx % 4]:
-                        st.image(f_row['url_limpia'], caption=f"{f_row['Usuario']} {f_row['Hora'][:5]}", use_container_width=True)
+                # GALERÍA CON CSS GRID RESPONSIVO
+                galeria_html = '<div class="galeria-grid">'
+                for idx, row in df_gal.iterrows():
+                    galeria_html += f'''
+                    <div class="foto-card">
+                        <img src="{row['url_limpia']}" class="foto-img">
+                        <div class="foto-pie">{row['Usuario']} - {row['Hora'][:5]}</div>
+                    </div>
+                    '''
+                galeria_html += '</div>'
+                st.markdown(galeria_html, unsafe_allow_html=True)
 
 with tab2:
     st.header("Cierre")
