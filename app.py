@@ -52,7 +52,7 @@ def calcular_distancia(lat1, lon1, lat2, lon2):
     return R * (2 * math.atan2(math.sqrt(a), math.sqrt(1 - a)))
 
 # ==========================================================
-# PROCESAMIENTO
+# DATOS
 # ==========================================================
 records = table.all()
 if not records:
@@ -88,7 +88,6 @@ with st.sidebar:
     ver_miniaturas = st.checkbox("📸 Ver Miniaturas en Mapa", value=True)
     
     st.markdown("---")
-    # BOTÓN DE MODO REPORTE
     modo_reporte = st.checkbox("📑 Activar Vista de Impresión (2 Páginas)", value=False)
     
     if st.button("🔄 Actualizar"): st.rerun()
@@ -97,18 +96,13 @@ if not sel_usuarios:
     st.stop()
 
 # ==========================================================
-# ESTILOS CSS (SEPARADOS PARA EVITAR ERRORES)
+# CSS (ESTILOS BLINDADOS PARA IMPRESIÓN)
 # ==========================================================
-
-# 1. CSS ESTÁTICO (No usa llaves dobles, es texto plano seguro)
 css_estatico = """
 <style>
-/* LIMPIEZA INTERFAZ */
+/* 1. LIMPIEZA */
 .block-container {
-    padding-top: 1rem !important;
-    padding-bottom: 0rem !important;
-    padding-left: 1rem !important;
-    padding-right: 1rem !important;
+    padding: 1rem !important;
     max-width: 100% !important;
 }
 header[data-testid="stHeader"] { background: transparent !important; }
@@ -116,7 +110,7 @@ header[data-testid="stHeader"] button { color: var(--text-color) !important; z-i
 [data-testid="stDecoration"] { display: none !important; }
 footer { display: none !important; }
 
-/* REGLAS DE IMPRESIÓN GENERALES */
+/* 2. REGLAS IMPRESIÓN */
 @media print {
     @page { size: landscape; margin: 0.5cm; }
     [data-testid="stSidebar"] { display: none !important; }
@@ -124,41 +118,74 @@ footer { display: none !important; }
     .stApp { margin: 0 !important; }
     body { -webkit-print-color-adjust: exact; background-color: white !important; color: black !important; }
     
-    /* CORTE DE PÁGINA */
     .page-break { 
         page-break-before: always !important; 
         break-before: page !important; 
-        display: block; 
-        height: 0; 
-        margin: 0;
+        display: block; height: 0; margin: 0;
     }
 }
 
-/* TÍTULO BASE */
+/* 3. TÍTULO */
 .title-container {
     display: flex;
     align-items: center;
     margin-bottom: 10px;
     margin-left: 0px;
     color: var(--text-color);
+    /* Importante para que no se corte al imprimir */
+    padding: 10px; 
+    overflow: visible;
 }
 .title-emoji {
-    margin-right: 15px;
-    line-height: 1;
+    margin-right: 20px;
+    line-height: 1.2; /* Aumentado para evitar cortes */
+    padding-bottom: 5px;
 }
 .title-text-block { display: flex; flex-direction: column; justify-content: center; }
 .title-main {
     font-weight: 900;
-    line-height: 1.0;
+    line-height: 1.1; /* Más aire */
     text-transform: uppercase;
 }
 .title-sub {
     font-weight: 600;
-    line-height: 1.1;
-    opacity: 0.8;
+    line-height: 1.2;
+    opacity: 0.9;
 }
 
-/* GALERÍA */
+/* 4. TABLA DE ESTADÍSTICAS PERSONALIZADA */
+.custom-stats-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: sans-serif;
+    margin-top: 10px;
+}
+.custom-stats-table th {
+    background-color: #000;
+    color: #fff;
+    padding: 8px 12px;
+    text-align: left;
+    font-size: 16px;
+    border: 2px solid #000;
+}
+.custom-stats-table td {
+    border: 2px solid #000; /* Borde grueso */
+    padding: 8px 12px;
+    font-size: 18px; /* Texto Grande */
+    font-weight: bold; /* Negrita */
+    color: #000;
+}
+.color-dot {
+    display: inline-block;
+    width: 15px;
+    height: 15px;
+    border-radius: 50%;
+    margin-right: 8px;
+    border: 1px solid #000;
+    vertical-align: middle;
+}
+
+/* 5. GALERÍA */
 .gallery-container {
     display: flex;
     flex-wrap: wrap;
@@ -191,11 +218,10 @@ footer { display: none !important; }
 </style>
 """
 
-# 2. CSS DINÁMICO (Aquí inyectamos las variables de Python)
-# Calculamos los valores antes para no ensuciar el f-string
-size_emoji = '80px' if modo_reporte else 'clamp(50px, 14vw, 75px)'
-size_main = '48px' if modo_reporte else 'clamp(28px, 8vw, 42px)'
-size_sub = '24px' if modo_reporte else 'clamp(16px, 5vw, 24px)'
+# AJUSTES TAMAÑO SEGÚN MODO
+size_emoji = '90px' if modo_reporte else 'clamp(50px, 14vw, 75px)'
+size_main = '50px' if modo_reporte else 'clamp(28px, 8vw, 42px)'
+size_sub = '28px' if modo_reporte else 'clamp(16px, 5vw, 24px)'
 width_item = '16.66%' if modo_reporte else '25%'
 
 css_dinamico = f"""
@@ -207,17 +233,40 @@ css_dinamico = f"""
 </style>
 """
 
-# Renderizamos ambos estilos juntos
 st.markdown(css_estatico + css_dinamico, unsafe_allow_html=True)
 
 # ==========================================================
-# LÓGICA DE DATOS
+# CÁLCULOS
 # ==========================================================
 df_f = df[df["Usuario"].isin(sel_usuarios)].copy()
-stats_list = []
+stats_rows = [] # Lista para la tabla HTML
 all_coords = []
+colores = ['#FF0000', '#00FF00', '#0000FF', '#FF00FF', '#FF8C00']
 
-# TÍTULO (HTML)
+# Calculamos todo antes de pintar
+for i, nombre in enumerate(sel_usuarios):
+    color = colores[i % len(colores)] # Color asignado
+    u_data = df_f[df_f["Usuario"] == nombre]
+    dist_u = 0.0
+    coords = u_data[["Latitud", "Longitud"]].values.tolist()
+    all_coords.extend(coords)
+    
+    if len(coords) > 1:
+        for k in range(len(coords)-1):
+            dist_u += calcular_distancia(coords[k][0], coords[k][1], coords[k+1][0], coords[k+1][1])
+    
+    # Preparamos fila HTML para estadísticas
+    fotos_count = u_data['url_limpia'].notna().sum()
+    dist_fmt = f"{dist_u:.2f} km"
+    stats_rows.append(f"""
+        <tr>
+            <td><span class="color-dot" style="background-color: {color};"></span>{nombre}</td>
+            <td>{fotos_count}</td>
+            <td>{dist_fmt}</td>
+        </tr>
+    """)
+
+# TÍTULO HTML
 html_titulo = """
 <div class="title-container">
     <div class="title-emoji">🏃🏽‍♂️</div>
@@ -228,39 +277,36 @@ html_titulo = """
 </div>
 """
 
+# TABLA HTML
+html_tabla = f"""
+<table class="custom-stats-table">
+    <thead>
+        <tr>
+            <th>Repartidor</th>
+            <th>Fotos</th>
+            <th>Distancia</th>
+        </tr>
+    </thead>
+    <tbody>
+        {"".join(stats_rows)}
+    </tbody>
+</table>
+"""
+
 # ==========================================================
 # RENDERIZADO: PÁGINA 1
 # ==========================================================
 
-# ENCABEZADO
 if modo_reporte:
-    col_head1, col_head2 = st.columns([2, 1])
-    with col_head1:
+    # MODO REPORTE: Layout Horizontal (Título | Tabla)
+    col1, col2 = st.columns([1.5, 1])
+    with col1:
         st.markdown(html_titulo, unsafe_allow_html=True)
-    with col_head2:
-        for i, nombre in enumerate(sel_usuarios):
-            u_data = df_f[df_f["Usuario"] == nombre]
-            dist_u = 0.0
-            coords = u_data[["Latitud", "Longitud"]].values.tolist()
-            all_coords.extend(coords)
-            if len(coords) > 1:
-                for k in range(len(coords)-1):
-                    dist_u += calcular_distancia(coords[k][0], coords[k][1], coords[k+1][0], coords[k+1][1])
-            stats_list.append({"Repartidor": nombre, "Fotos": u_data['url_limpia'].notna().sum(), "Dist.": f"{dist_u:.2f} km"})
-        
-        st.markdown("<br>", unsafe_allow_html=True) 
-        st.dataframe(pd.DataFrame(stats_list), use_container_width=True, hide_index=True)
+    with col2:
+        st.markdown(html_tabla, unsafe_allow_html=True) # Tabla HTML personalizada
 else:
+    # MODO NORMAL: Título arriba
     st.markdown(html_titulo, unsafe_allow_html=True)
-    for i, nombre in enumerate(sel_usuarios):
-        u_data = df_f[df_f["Usuario"] == nombre]
-        dist_u = 0.0
-        coords = u_data[["Latitud", "Longitud"]].values.tolist()
-        all_coords.extend(coords)
-        if len(coords) > 1:
-            for k in range(len(coords)-1):
-                dist_u += calcular_distancia(coords[k][0], coords[k][1], coords[k+1][0], coords[k+1][1])
-        stats_list.append({"Repartidor": nombre, "Fotos": u_data['url_limpia'].notna().sum(), "Dist.": f"{dist_u:.2f} km"})
 
 # MAPA
 alto_mapa = 700 if modo_reporte else 250
@@ -269,18 +315,14 @@ m = folium.Map(location=[df_f["Latitud"].mean(), df_f["Longitud"].mean()], zoom_
 if tipo_mapa == "Satélite":
     folium.TileLayer(tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', attr='Esri').add_to(m)
 
-colores = ['#FF0000', '#00FF00', '#0000FF', '#FF00FF', '#FF8C00']
-
 for i, nombre in enumerate(sel_usuarios):
     color = colores[i % len(colores)]
     u_data = df_f[df_f["Usuario"] == nombre].reset_index(drop=True)
     
     if not u_data.empty:
         coords = u_data[["Latitud", "Longitud"]].values.tolist()
-        
         if len(coords) > 1:
             linea = folium.PolyLine(coords, color=color, weight=4, opacity=0.8).add_to(m)
-            # Flechas
             PolyLineTextPath(linea, '                    ▶                    ', repeat=True, offset=20, attributes={'fill': color, 'font-size': '12'}).add_to(m)
 
         r_ini, r_fin = u_data.iloc[0], u_data.iloc[-1]
@@ -296,10 +338,14 @@ for i, nombre in enumerate(sel_usuarios):
                         icon=folium.DivIcon(html=f'<div style="width:30px; height:30px; border:2px solid {color}; background:white; border-radius:4px; overflow:hidden;"><img src="{row["url_limpia"]}" style="width:100%; height:100%; object-fit:cover;"></div>'),
                         popup=folium.Popup(popup_html, max_width=230)).add_to(m)
 
-if all_coords:
-    m.fit_bounds(all_coords)
+if all_coords: m.fit_bounds(all_coords)
 
 st_folium(m, width="100%", height=alto_mapa, returned_objects=[])
+
+# ESTADÍSTICAS MODO NORMAL (Abajo del mapa)
+if not modo_reporte:
+    st.markdown("### 📊 Estadísticas")
+    st.markdown(html_tabla, unsafe_allow_html=True)
 
 # ==========================================================
 # CORTE DE PÁGINA
@@ -310,11 +356,6 @@ if modo_reporte:
 # ==========================================================
 # RENDERIZADO: PÁGINA 2 (GALERÍA)
 # ==========================================================
-
-if not modo_reporte:
-    st.markdown("### 📊 Estadísticas")
-    st.dataframe(pd.DataFrame(stats_list), use_container_width=True, hide_index=True)
-
 titulo_galeria = "**📸 Evidencias Fotográficas**" if modo_reporte else "### 📸 Evidencias"
 st.markdown(titulo_galeria)
 
