@@ -146,6 +146,21 @@ def calcular_distancia(lat1, lon1, lat2, lon2):
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
     return R * c
 
+# --- Función Auxiliar: Extraer URL de Foto de forma segura ---
+def extraer_url_foto(valor_celda):
+    if not valor_celda:
+        return None
+    # Caso 1: Es una lista de Airtable (formato estándar)
+    if isinstance(valor_celda, list) and len(valor_celda) > 0:
+        return valor_celda[0].get('url')
+    # Caso 2: Es un diccionario directo
+    if isinstance(valor_celda, dict):
+        return valor_celda.get('url')
+    # Caso 3: Es una cadena de texto (URL directa)
+    if isinstance(valor_celda, str) and (valor_celda.startswith('http') or valor_celda.startswith('https')):
+        return valor_celda
+    return None
+
 # --- SECCIÓN 4: MAPA ESTRATÉGICO MAESTRO ---
 if not df_gps.empty:
     st.markdown("---")
@@ -199,11 +214,10 @@ if not df_gps.empty:
             if len(u_data) > 0:
                 coords = u_data[[col_lat, col_lon]].values.tolist()
                 
-                # A. LÍNEA CON SOMBRA (Si hay más de 1 punto)
+                # A. LÍNEA CON SOMBRA
                 if len(coords) > 1:
                     folium.PolyLine(coords, color='black', weight=6, opacity=0.4).add_to(m)
                     linea = folium.PolyLine(coords, color=color, weight=2.5, opacity=1).add_to(m)
-                    
                     folium.plugins.PolyLineTextPath(linea, '                ►                ', repeat=True, offset=8, 
                                                     attributes={'fill': color, 'font-weight': 'bold', 'font-size': '20', 'stroke': 'black', 'stroke-width': '0.5'}).add_to(m)
 
@@ -215,7 +229,6 @@ if not df_gps.empty:
                     if j < len(u_data) - 1:
                         p_next = u_data.iloc[j+1]
                         distancia_total += calcular_distancia(row[col_lat], row[col_lon], p_next[col_lat], p_next[col_lon])
-                        
                         t_parada = (p_next['hora_dt'] - row['hora_dt']).total_seconds() / 60
                         if t_parada >= 5:
                             folium.Marker([row[col_lat], row[col_lon]], icon=folium.DivIcon(html='<div style="font-size:18pt">🚩</div>'),
@@ -231,35 +244,42 @@ if not df_gps.empty:
                 folium.Marker([r_ini[col_lat], r_ini[col_lon]], icon=folium.DivIcon(html='<div style="font-size:24pt;filter:drop-shadow(2px 2px 2px black);">📌</div>'), popup=f"SALIDA: {r_ini[col_hora]}").add_to(m)
                 folium.Marker([r_fin[col_lat]+0.00002, r_fin[col_lon]+0.00002], icon=folium.DivIcon(html='<div style="font-size:24pt;filter:drop-shadow(2px 2px 2px black);">🏁</div>'), popup=f"LLEGADA: {r_fin[col_hora]}").add_to(m)
 
-                # D. FOTOS EN MAPA
-                if col_foto and col_foto in u_data.columns:
-                    for _, f_row in u_data.dropna(subset=[col_foto]).iterrows():
-                        url = f_row[col_foto][0]['url'] if isinstance(f_row[col_foto], list) else f_row[col_foto]
-                        folium.Marker([f_row[col_lat], f_row[col_lon]], 
-                                      icon=folium.DivIcon(html=f'<div style="width:50px;height:50px;border:2px solid {color};background:white;padding:2px;"><img src="{url}" width="46" height="46" style="object-fit:cover;"></div>'),
-                                      popup=folium.Popup(f'<img src="{url}" width="200">', max_width=200)).add_to(m)
+                # D. FOTOS EN EL MAPA (Miniaturas)
+                if col_foto:
+                    for _, f_row in u_data.iterrows():
+                        url_mapa = extraer_url_foto(f_row.get(col_foto))
+                        if url_mapa:
+                            folium.Marker([f_row[col_lat], f_row[col_lon]], 
+                                          icon=folium.DivIcon(html=f'<div style="width:50px;height:50px;border:2px solid {color};background:white;padding:2px;"><img src="{url_mapa}" width="46" height="46" style="object-fit:cover;"></div>'),
+                                          popup=folium.Popup(f'<img src="{url_mapa}" width="200">', max_width=200)).add_to(m)
 
                 resumen_datos.append({"Repartidor": nombre, "Salida": r_ini[col_hora], "Llegada": r_fin[col_hora], "KM": round(distancia_total, 2)})
 
         m.fit_bounds(df_filtrado[[col_lat, col_lon]].values.tolist())
         st_folium(m, width="100%", height=650)
 
-        # 📄 SECCIÓN DE REPORTE
+        # 📄 SECCIÓN DE REPORTE (Aquí vive la Galería de Testigos)
         if modo_reporte:
             st.markdown("### 📋 Resumen de Jornada")
-            st.dataframe(pd.DataFrame(resumen_datos), use_container_width=True)
+            st.table(pd.DataFrame(resumen_datos))
             
-            if col_foto:
-                st.write("### 📸 Galería de Testigos")
-                fotos_df = df_filtrado.dropna(subset=[col_foto])
-                if not fotos_df.empty:
-                    cols_gal = st.columns(4)
-                    # AQUÍ ESTÁ LA CORRECCIÓN DEL SYNTAX ERROR:
-                    for idx, row_f in fotos_df.reset_index().iterrows():
-                        url_f = row_f[col_foto][0]['url'] if isinstance(row_f[col_foto], list) else row_f[col_foto]
-                        cols_gal[idx % 4].image(url_f, caption=f"{row_f[col_user]} - {row_f[col_hora]}")
+            st.write("### 📸 Galería de Testigos")
+            # Filtrar filas que tengan contenido en la columna foto
+            df_con_fotos = df_filtrado[df_filtrado[col_foto].notna()]
+            
+            if not df_con_fotos.empty:
+                cols_gal = st.columns(4)
+                contador = 0
+                for _, row_f in df_con_fotos.iterrows():
+                    url_f = extraer_url_foto(row_f[col_foto])
+                    if url_f:
+                        with cols_gal[contador % 4]:
+                            st.image(url_f, caption=f"{row_f[col_user]} - {row_f[col_hora]}")
+                        contador += 1
+            else:
+                st.info("No se encontraron registros con fotografías para este reporte.")
     else:
-        st.info("Selecciona repartidores.")
+        st.info("Selecciona repartidores en la barra lateral.")
               
 # ------------------------------------------
 # PESTAÑA 2: MOTOR DE MIGRACIÓN
