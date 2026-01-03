@@ -3,6 +3,8 @@ import pandas as pd
 from pyairtable import Api
 import gspread
 from google.oauth2.service_account import Credentials
+import cloudinary
+import cloudinary.uploader
 import folium
 import math
 import re
@@ -12,56 +14,64 @@ from folium.plugins import PolyLineTextPath
 # ==========================================================
 # CONFIGURACIÓN
 # ==========================================================
-st.set_page_config(page_title="Monitor 🗞️", layout="wide")
+st.set_page_config(page_title="Monitor Reparto", layout="wide")
 
 # ==========================================================
-# CSS MAESTRO
+# CSS MAESTRO (Título ajustado, Galería 2x2 móvil)
 # ==========================================================
 st.markdown("""
 <style>
-/* 1. SIDEBAR Y LIMPIEZA */
+/* 1. AJUSTES GLOBALES Y SIDEBAR */
+/* Reducir espacio superior drásticamente */
+.block-container {
+    padding-top: 1rem !important;
+    padding-bottom: 0rem !important;
+}
 header[data-testid="stHeader"] { background: transparent !important; }
-header[data-testid="stHeader"] button { color: var(--text-color) !important; }
+header[data-testid="stHeader"] button { color: var(--text-color) !important; z-index: 9999; }
 [data-testid="stDecoration"] { display: none !important; }
 footer { display: none !important; }
 
-/* 2. TÍTULO */
+/* 2. TÍTULO (Subido, agrandado y a la izquierda) */
 .titulo-smart {
-    margin-left: 50px; margin-top: 10px;
-    font-weight: bold; font-size: clamp(18px, 6vw, 26px);
+    margin-left: 5px; /* Mínimo margen para el botón del menú */
+    margin-bottom: 10px;
+    text-align: left;
+    font-weight: bold; 
+    /* Fuente más grande: Mínimo 22px, Ideal 7% pantalla, Máx 32px */
+    font-size: clamp(22px, 7vw, 32px); 
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     color: var(--text-color);
+    line-height: 1.2;
 }
 
-/* 3. GALERÍA GRID FLEXIBLE */
+/* 3. GALERÍA GRID HTML BLINDADA (2 Columnas Móvil / 4 Escritorio) */
 .gallery-container {
     display: flex;
     flex-wrap: wrap;
-    margin: 0 -4px; /* Compensar padding */
+    margin: 0 -4px;
     justify-content: flex-start;
 }
 
 .gallery-item {
     box-sizing: border-box;
     padding: 4px;
-    /* ESCRITORIO: 4 Columnas (25%) */
-    width: 25%;
+    width: 25%; /* Escritorio */
 }
 
-/* MÓVIL: 2 COLUMNAS (50%) */
 @media (max-width: 768px) {
     .gallery-item {
-        width: 50% !important;
+        width: 50% !important; /* MÓVIL: 2 COLUMNAS FIJAS */
     }
 }
 
-/* 4. TARJETA DE FOTO */
+/* 4. TARJETA DE FOTO (Sin recortes) */
 .photo-card {
     border: 1px solid #ddd;
     border-radius: 6px;
-    background-color: #f5f5f5; /* Fondo gris claro */
+    background-color: #f0f2f6;
     overflow: hidden;
-    height: 200px; /* Altura fija para uniformidad */
+    height: 210px;
     position: relative;
     display: flex;
     flex-direction: column;
@@ -69,9 +79,9 @@ footer { display: none !important; }
 
 .photo-card img {
     width: 100%;
-    height: 175px; /* Espacio para imagen */
-    object-fit: contain; /* <--- NO RECORTA, AJUSTA */
-    background-color: #333; /* Fondo oscuro detrás de la foto */
+    height: 185px;
+    object-fit: contain; /* AJUSTE PROPORCIONAL */
+    background-color: #ababb3; /* Fondo neutro */
 }
 
 .photo-caption {
@@ -79,13 +89,12 @@ footer { display: none !important; }
     background: #fff;
     color: #000;
     font-size: 10px;
-    font-weight: bold;
+    font-weight: 600;
     display: flex;
     align-items: center;
     justify-content: center;
     border-top: 1px solid #ccc;
-    white-space: nowrap;
-    overflow: hidden;
+    white-space: nowrap; overflow: hidden;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -129,9 +138,10 @@ def calcular_distancia(lat1, lon1, lat2, lon2):
     return R * (2 * math.atan2(math.sqrt(a), math.sqrt(1 - a)))
 
 # ==========================================================
-# UI
+# APP
 # ==========================================================
-st.markdown('<div class="titulo-smart">🗞️ Monitor Reparto Folletos</div>', unsafe_allow_html=True)
+# Nuevo Emoji y Título ajustado
+st.markdown('<div class="titulo-smart">🏃‍♂️📄 Monitor Reparto Folletos</div>', unsafe_allow_html=True)
 
 tab1, tab2 = st.tabs(["📍 Mapa", "☁️ Cierre"])
 
@@ -146,7 +156,6 @@ with tab1:
     rename = {c: "Latitud" if "lat" in c else "Longitud" if "lon" in c else "Usuario" if "usu" in c else "Hora" if "hora" in c else "Foto" if ("foto" in c and "etiq" not in c) else c for c in df.columns}
     df = df.rename(columns=rename)
     
-    # Procesamiento
     df["Latitud"] = pd.to_numeric(df["Latitud"], errors="coerce")
     df["Longitud"] = pd.to_numeric(df["Longitud"], errors="coerce")
     df = df.dropna(subset=["Latitud", "Longitud"])
@@ -159,7 +168,7 @@ with tab1:
         df["url_limpia"] = None
 
     with st.sidebar:
-        st.header("⚙️ Config")
+        st.header("⚙️ Filtros")
         usuarios_lista = sorted(df["Usuario"].dropna().unique().tolist())
         sel_usuarios = st.multiselect("Repartidores", usuarios_lista, default=usuarios_lista)
         tipo_mapa = st.radio("Capa", ["Calle", "Satélite"])
@@ -186,7 +195,8 @@ with tab1:
                 
                 if len(coords) > 1:
                     linea = folium.PolyLine(coords, color=color, weight=4).add_to(m)
-                    PolyLineTextPath(linea, '   ►   ', repeat=True, offset=8, attributes={'fill': color, 'font-size': '18'}).add_to(m)
+                    # Flechas más pequeñas y sutiles
+                    PolyLineTextPath(linea, ' ▶ ', repeat=True, offset=15, attributes={'fill': color, 'font-size': '12'}).add_to(m)
 
                 ult_hito = None
                 for j, row in u_data.iterrows():
@@ -200,7 +210,12 @@ with tab1:
                         ult_hito = row["Hora_dt"]
                     
                     if row['url_limpia']:
-                         folium.Marker([row["Latitud"], row["Longitud"]], icon=folium.DivIcon(html=f'<div style="width:30px; height:30px; border:2px solid {color}; background:white;"><img src="{row["url_limpia"]}" style="width:100%; height:100%; object-fit:cover;"></div>')).add_to(m)
+                        # Popup controlado para la miniatura
+                        popup_html = f'<img src="{row["url_limpia"]}" style="max-width:220px; max-height:220px; object-fit:contain; border-radius:4px;">'
+                        
+                        folium.Marker([row["Latitud"], row["Longitud"]],
+                            icon=folium.DivIcon(html=f'<div style="width:30px; height:30px; border:2px solid {color}; background:white; border-radius:4px; overflow:hidden;"><img src="{row["url_limpia"]}" style="width:100%; height:100%; object-fit:cover;"></div>'),
+                            popup=folium.Popup(popup_html, max_width=230)).add_to(m)
 
                 r_ini, r_fin = u_data.iloc[0], u_data.iloc[-1]
                 off = 0.00009 if (abs(r_ini["Latitud"] - r_fin["Latitud"]) < 0.00005) else 0
@@ -209,30 +224,26 @@ with tab1:
                 
                 stats_list.append({"Repartidor": nombre, "Fotos": u_data['url_limpia'].notna().sum(), "Dist.": f"{dist_u:.2f} km"})
 
-        st_folium(m, width="100%", height=400, returned_objects=[])
+        # Altura del mapa a 450px
+        st_folium(m, width="100%", height=450, returned_objects=[])
 
         # --- ESTADÍSTICAS ---
         st.markdown("### 📊 Estadísticas")
         st.dataframe(pd.DataFrame(stats_list), use_container_width=True, hide_index=True)
         
-        # --- GALERÍA HTML (CORREGIDA SIN ESPACIOS ROTOS) ---
+        # --- GALERÍA HTML BLINDADA (Ordenada y Proporcional) ---
         st.markdown("### 📸 Evidencias")
         df_gal = df_f[df_f['url_limpia'].notna()]
         
         if not df_gal.empty:
-            # Construcción limpia del string HTML
             html_parts = ['<div class="gallery-container">']
-            
             for _, row in df_gal.iterrows():
                 url = row['url_limpia']
                 user = str(row['Usuario']).split()[0].replace("<","").replace(">","")
                 hora = str(row['Hora'])[:5]
-                # Todo en una línea para evitar bug de Markdown "Code Block"
-                html_parts.append(f'<div class="gallery-item"><a href="{url}" target="_blank" style="text-decoration:none;"><div class="photo-card"><img src="{url}"><div class="photo-caption">{user} {hora}</div></div></a></div>')
-            
+                # HTML en una sola línea
+                html_parts.append(f'<div class="gallery-item"><a href="{url}" target="_blank" style="text-decoration:none;"><div class="photo-card"><img src="{url}" loading="lazy"><div class="photo-caption">{user} {hora}</div></div></a></div>')
             html_parts.append('</div>')
-            
-            # Unir sin saltos de línea peligrosos
             st.markdown("".join(html_parts), unsafe_allow_html=True)
         else:
             st.info("Sin evidencias.")
