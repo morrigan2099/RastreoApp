@@ -133,7 +133,14 @@ df = df.dropna(subset=["Latitud", "Longitud"])
 df["Hora_dt"] = pd.to_datetime(df["Hora"], errors="coerce")
 df = df.sort_values("Hora_dt")
 
-df["url_limpia"] = df["Foto"].apply(obtener_url_final) if "Foto" in df.columns else None
+# 🔧 MUY IMPORTANTE: limpiar índice duplicado
+df = df.reset_index(drop=True)
+
+df["url_limpia"] = (
+    df["Foto"].apply(obtener_url_final)
+    if "Foto" in df.columns
+    else None
+)
 
 with st.sidebar:
     usuarios = sorted(df["Usuario"].dropna().unique())
