@@ -120,21 +120,36 @@ with tab1:
                 coords = u_data[["Latitud", "Longitud"]].values.tolist()
                 dist_u = 0.0
                 
-                # 1. RUTA (FLECHAS 1/4)
+                # 1. RUTA
                 if len(coords) > 1:
                     linea = folium.PolyLine(coords, color=color, weight=4, opacity=0.8).add_to(m)
                     PolyLineTextPath(linea, '                                ►                                ', 
                                      repeat=True, offset=8, 
                                      attributes={'fill': color, 'font-weight': 'bold', 'font-size': '22', 'stroke': 'black', 'stroke-width': '1'}).add_to(m)
 
-                # 2. MINIATURAS HD Y KM
+                # 2. MINIATURAS, KM Y PINES DE TIEMPO
+                ult_hito = None
                 for j, row in u_data.iterrows():
                     if j < len(u_data) - 1:
                         p_next = u_data.iloc[j+1]
                         dist_u += calcular_distancia(row["Latitud"], row["Longitud"], p_next["Latitud"], p_next["Longitud"])
 
+                    # --- PINES CADA 15 MINUTOS (Tamaño 20) 📍 ---
+                    if ult_hito is None or (row["Hora_dt"] - ult_hito).total_seconds() >= 900:
+                        folium.Marker(
+                            [row["Latitud"], row["Longitud"]],
+                            icon=folium.DivIcon(html=f'''
+                                <div style="text-align:center;">
+                                    <div style="font-size:20pt; filter: drop-shadow(1px 1px 2px black);">📍</div>
+                                    <div style="font-size:8pt; color:white; background:rgba(0,0,0,0.7); padding:2px 4px; border-radius:3px; font-weight:bold;">{row["Hora"][:5]}</div>
+                                </div>'''),
+                            popup=folium.Popup(f"<b>{nombre}</b><br>Hito: {row['Hora']}", max_width=200),
+                            z_index_offset=1000 
+                        ).add_to(m)
+                        ult_hito = row["Hora_dt"]
+
+                    # Miniaturas HD
                     if row['url_limpia']:
-                        # Ajuste leve de la foto si está en los extremos
                         img_off = 0.00005 if (j == 0 or j == len(u_data)-1) else 0
                         folium.Marker(
                             [row["Latitud"] - img_off, row["Longitud"] - img_off],
@@ -146,11 +161,9 @@ with tab1:
                             z_index_offset=100
                         ).add_to(m)
 
-                # 3. INICIO Y FIN (OFFSET REDUCIDO A 1/5)
+                # 3. INICIO Y FIN (Offset 1/5)
                 r_ini, r_fin = u_data.iloc[0], u_data.iloc[-1]
                 mismo_sitio = (abs(r_ini["Latitud"] - r_fin["Latitud"]) < 0.00005 and abs(r_ini["Longitud"] - r_fin["Longitud"]) < 0.00005)
-                
-                # Un quinto de la distancia anterior (9 metros aprox)
                 off = 0.00009 if mismo_sitio else 0
 
                 folium.Marker([r_ini["Latitud"], r_ini["Longitud"]], 
@@ -162,22 +175,17 @@ with tab1:
                     popup=f"LLEGADA: {r_fin['Hora']}", z_index_offset=2000).add_to(m)
 
                 resumen_jornada.append({
-                    "Repartidor": nombre,
-                    "Salida": r_ini["Hora"],
-                    "Llegada": r_fin["Hora"],
-                    "📸": u_data['url_limpia'].notna().sum(),
-                    "Distancia": f"{dist_u:.2f} km"
+                    "Repartidor": nombre, "Salida": r_ini["Hora"], "Llegada": r_fin["Hora"],
+                    "📸": u_data['url_limpia'].notna().sum(), "Distancia": f"{dist_u:.2f} km"
                 })
 
         m.fit_bounds(df_f[["Latitud", "Longitud"]].values.tolist())
         st_folium(m, width="100%", height=600, returned_objects=[])
 
-        # --- REPORTE Y GALERÍA ---
         if modo_reporte:
             st.markdown("### 📋 Resumen de Jornada")
             st.table(pd.DataFrame(resumen_jornada))
-            
-            st.markdown("### 📸 Galería de Testigos")
+            st.write("### 📸 Galería")
             df_gal = df_f[df_f['url_limpia'].notna()]
             if not df_gal.empty:
                 cols = st.columns(2)
