@@ -108,11 +108,12 @@ with tab1:
         records = []
 
     if records:
+        # 1. Crear DataFrame base
         data = [r['fields'] for r in records]
         df = pd.DataFrame(data)
         
-        # Normalización de Nombres
-        df.columns = [c.lower() for c in df.columns]
+        # 2. Normalización de Nombres (CORREGIDO PARA INCLUIR ZONA)
+        df.columns = [c.lower() for c in df.columns] # Todo a minúsculas primero
         
         rename_map = {}
         for col in df.columns:
@@ -124,10 +125,13 @@ with tab1:
             if 'etiq' in col: rename_map[col] = 'Etiqueta_Foto'
             if 'fecha' in col: rename_map[col] = 'Fecha'
             if 'hora' in col: rename_map[col] = 'Hora'
+            if 'zona' in col: rename_map[col] = 'Zona'  # <--- AGREGADO: Detecta 'zona'
             
         df = df.rename(columns=rename_map)
 
-        if 'Tipo' not in df.columns: df['Tipo'] = 'GPS'
+        # 3. Separar GPS y FOTOS
+        if 'Tipo' not in df.columns:
+            df['Tipo'] = 'GPS'
 
         df_gps = df[df['Tipo'] != 'FOTO'].copy()
         df_fotos = df[df['Tipo'] == 'FOTO'].copy()
@@ -147,8 +151,7 @@ with tab1:
 
             if not df_gps.empty:
                 import pydeck as pdk 
-                import random
-
+                
                 # --- B. SELECTOR DE TIPO DE MAPA ---
                 col_mapa1, col_mapa2 = st.columns([2, 1])
                 with col_mapa1:
@@ -156,21 +159,21 @@ with tab1:
                         "Estilo del Mapa:",
                         ["🌎 Satélite (Auditoría)", "🗺️ Calles (Limpio)", "🌑 Oscuro (Contraste)"],
                         horizontal=True,
-                        label_visibility="collapsed" # Oculta el título para que se vea más limpio
+                        label_visibility="collapsed"
                     )
 
                 # Traducir selección a URL de Mapbox
                 if "Satélite" in estilo_seleccionado:
                     map_url = 'mapbox://styles/mapbox/satellite-streets-v12'
-                    color_ruta = [255, 255, 0]   # Amarillo (resalta en satélite)
+                    color_ruta = [255, 255, 0]   # Amarillo
                     color_punto = [255, 0, 0]    # Rojo
                 elif "Oscuro" in estilo_seleccionado:
                     map_url = 'mapbox://styles/mapbox/dark-v10'
-                    color_ruta = [0, 255, 255]   # Cian Neón (resalta en negro)
+                    color_ruta = [0, 255, 255]   # Cian
                     color_punto = [255, 0, 255]  # Magenta
                 else:
                     map_url = 'mapbox://styles/mapbox/streets-v11'
-                    color_ruta = [0, 0, 255]     # Azul fuerte (resalta en blanco)
+                    color_ruta = [0, 0, 255]     # Azul
                     color_punto = [0, 0, 0]      # Negro
 
                 # --- C. PREPARAR CAPAS ---
@@ -184,7 +187,11 @@ with tab1:
                     usuarios = ['Desconocido']
                 
                 for usuario in usuarios:
-                    datos_usuario = df_gps[df_gps['Usuario'] == usuario]
+                    if 'Usuario' in df_gps.columns:
+                        datos_usuario = df_gps[df_gps['Usuario'] == usuario]
+                    else:
+                        datos_usuario = df_gps
+                    
                     coordenadas = datos_usuario[['Longitud', 'Latitud']].values.tolist()
                     
                     path_data.append({
@@ -193,7 +200,7 @@ with tab1:
                         "color": color_ruta
                     })
 
-                # Capa 1: RUTA (Línea)
+                # Capa 1: RUTA
                 layer_ruta = pdk.Layer(
                     "PathLayer",
                     path_data,
@@ -205,7 +212,7 @@ with tab1:
                     pickable=True
                 )
 
-                # Capa 2: PUNTOS (Detalle)
+                # Capa 2: PUNTOS
                 layer_puntos = pdk.Layer(
                     "ScatterplotLayer",
                     df_gps,
@@ -229,21 +236,26 @@ with tab1:
 
                 # --- D. DIBUJAR MAPA ---
                 st.pydeck_chart(pdk.Deck(
-                    map_style=map_url, # <--- AQUÍ USAMOS LA VARIABLE DINÁMICA
+                    map_style=map_url, 
                     layers=[layer_ruta, layer_puntos],
                     initial_view_state=view_state,
-                    tooltip={"text": "Chofer: {Usuario}\nHora: {Hora}\nLat: {Latitud}\nLon: {Longitud}"}
+                    tooltip={"text": "Chofer: {Usuario}\nHora: {Hora}\nLat: {Latitud}"}
                 ))
                 
+                # --- E. TABLA DE DATOS (PROTEGIDA) ---
                 with st.expander("🕵️ Ver datos crudos"):
-                    st.dataframe(df_gps[['Hora', 'Latitud', 'Longitud', 'Zona']])
+                    # Lista ideal de columnas
+                    cols_deseadas = ['Hora', 'Latitud', 'Longitud', 'Zona', 'Usuario']
+                    # Filtramos solo las que EXISTEN para que no de error KeyError
+                    cols_reales = [c for c in cols_deseadas if c in df_gps.columns]
+                    st.dataframe(df_gps[cols_reales])
 
             else:
                 st.warning("Datos GPS no válidos.")
         else:
-            st.info("Esperando coordenadas...")
+            st.info("Esperando coordenadas GPS...")
 
-        # Galería
+        # 5. GALERÍA
         if not df_fotos.empty and 'Foto' in df_fotos.columns:
             st.subheader("Últimas Evidencias")
             cols = st.columns(4)
