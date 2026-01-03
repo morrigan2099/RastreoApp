@@ -134,48 +134,51 @@ with tab1:
         
         st.metric("📦 Paquetes/Evidencias hoy", len(df_fotos))
         
-        # Mapa Protegido
+        # 4. MAPA A PRUEBA DE ERRORES (Con PyDeck)
         if not df_gps.empty and 'Latitud' in df_gps.columns and 'Longitud' in df_gps.columns:
+            # Forzar conversión a números
             df_gps['Latitud'] = pd.to_numeric(df_gps['Latitud'], errors='coerce')
             df_gps['Longitud'] = pd.to_numeric(df_gps['Longitud'], errors='coerce')
+            
+            # Eliminar filas inválidas
             df_gps = df_gps.dropna(subset=['Latitud', 'Longitud'])
             
             if not df_gps.empty:
-                import pydeck as pdk # Asegúrate de importar esto arriba, o déjalo aquí
+                import pydeck as pdk 
 
-            # 1. Calcular el centro del mapa automáticamente
-            lat_center = df_gps['Latitud'].mean()
-            lon_center = df_gps['Longitud'].mean()
+                # Calcular centro del mapa
+                lat_center = df_gps['Latitud'].mean()
+                lon_center = df_gps['Longitud'].mean()
 
-            # 2. Configurar la Capa de Puntos (Scatterplot)
-            layer = pdk.Layer(
-                "ScatterplotLayer",
-                df_gps,
-                get_position='[Longitud, Latitud]', # Ojo: PyDeck pide Longitud primero
-                get_color='[0, 100, 255, 160]',      # Azul brillante con transparencia
-                get_radius=8,                        # Radio en METROS (ajusta esto si quieres más chicos)
-                pickable=True,                       # Permite pasar el mouse y ver datos
-                radius_min_pixels=3,                 # Tamaño mínimo en pantalla (para que no desaparezcan al alejar)
-                radius_max_pixels=10,                # Tamaño máximo
-            )
+                # Configurar puntos pequeños (Scatterplot)
+                layer = pdk.Layer(
+                    "ScatterplotLayer",
+                    df_gps,
+                    get_position='[Longitud, Latitud]',
+                    get_color='[0, 100, 255, 160]', # Azul con transparencia
+                    get_radius=8,                   # Radio en metros (más chico)
+                    pickable=True,
+                    radius_min_pixels=3,
+                    radius_max_pixels=10,
+                )
 
-            # 3. Configurar la Vista Inicial
-            view_state = pdk.ViewState(
-                latitude=lat_center,
-                longitude=lon_center,
-                zoom=15, # Zoom cercano
-                pitch=0, # Inclinación (0 es vista desde arriba, como mapa 2D)
-            )
+                # Vista inicial
+                view_state = pdk.ViewState(
+                    latitude=lat_center,
+                    longitude=lon_center,
+                    zoom=15,
+                    pitch=0,
+                )
 
-            # 4. Renderizar el Mapa
-            st.pydeck_chart(pdk.Deck(
-                map_style='mapbox://styles/mapbox/light-v9', # Estilo de mapa limpio
-                layers=[layer],
-                initial_view_state=view_state,
-                tooltip={"text": "Chofer: {Usuario}\nHora: {Hora}"} # Lo que sale al pasar el mouse
-            ))
+                # Dibujar mapa
+                st.pydeck_chart(pdk.Deck(
+                    map_style='mapbox://styles/mapbox/light-v9',
+                    layers=[layer],
+                    initial_view_state=view_state,
+                    tooltip={"text": "Chofer: {Usuario}\nHora: {Hora}"}
+                ))
             else:
-                st.warning("Coordenadas inválidas detectadas.")
+                st.warning("Hay datos GPS, pero las coordenadas no son válidas.")
         else:
             st.info("Esperando coordenadas GPS...")
 
