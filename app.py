@@ -138,120 +138,91 @@ with tab1:
         
         st.metric("📦 Paquetes/Evidencias hoy", len(df_fotos))
         
-        # 4. MAPA INTERACTIVO (Con selector de estilo)
+        # 4. MAPA INFALIBLE (FOLIUM)
         if not df_gps.empty and 'Latitud' in df_gps.columns and 'Longitud' in df_gps.columns:
-            # --- A. Limpieza de Datos ---
+            # A. Limpieza de Datos (Vital)
             df_gps['Latitud'] = pd.to_numeric(df_gps['Latitud'], errors='coerce')
             df_gps['Longitud'] = pd.to_numeric(df_gps['Longitud'], errors='coerce')
             df_gps = df_gps.dropna(subset=['Latitud', 'Longitud'])
             
-            # Ordenar por hora para la ruta
+            # Ordenar por hora es OBLIGATORIO para que la línea tenga sentido
             if 'Hora' in df_gps.columns:
                 df_gps = df_gps.sort_values(by='Hora')
 
             if not df_gps.empty:
-                import pydeck as pdk 
+                # Usamos Folium explícitamente (asegúrate de tener 'import folium' arriba)
+                # y 'from streamlit_folium import st_folium'
                 
-                # --- B. SELECTOR DE TIPO DE MAPA ---
-                col_mapa1, col_mapa2 = st.columns([2, 1])
-                with col_mapa1:
-                    estilo_seleccionado = st.radio(
-                        "Estilo del Mapa:",
-                        ["🌎 Satélite (Auditoría)", "🗺️ Calles (Limpio)", "🌑 Oscuro (Contraste)"],
-                        horizontal=True,
-                        label_visibility="collapsed"
-                    )
-
-                # Traducir selección a URL de Mapbox
-                if "Satélite" in estilo_seleccionado:
-                    map_url = 'mapbox://styles/mapbox/satellite-streets-v12'
-                    color_ruta = [255, 255, 0]   # Amarillo
-                    color_punto = [255, 0, 0]    # Rojo
-                elif "Oscuro" in estilo_seleccionado:
-                    map_url = 'mapbox://styles/mapbox/dark-v10'
-                    color_ruta = [0, 255, 255]   # Cian
-                    color_punto = [255, 0, 255]  # Magenta
-                else:
-                    map_url = 'mapbox://styles/mapbox/streets-v11'
-                    color_ruta = [0, 0, 255]     # Azul
-                    color_punto = [0, 0, 0]      # Negro
-
-                # --- C. PREPARAR CAPAS ---
+                # Calcular centro
                 lat_center = df_gps['Latitud'].mean()
                 lon_center = df_gps['Longitud'].mean()
 
-                path_data = []
+                # B. CREAR EL MAPA BASE
+                # zoom_start=16 es un zoom cercano (nivel calle)
+                m = folium.Map(location=[lat_center, lon_center], zoom_start=16)
+
+                # C. AGREGAR CAPA DE SATÉLITE (Esri World Imagery)
+                # Esto no requiere API Key y se ve increíble
+                folium.TileLayer(
+                    tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+                    attr='Esri',
+                    name='Satélite',
+                    overlay=False,
+                    control=True
+                ).add_to(m)
+
+                # D. DIBUJAR RUTA Y PUNTOS
                 if 'Usuario' in df_gps.columns:
                     usuarios = df_gps['Usuario'].unique()
                 else:
                     usuarios = ['Desconocido']
-                
+
                 for usuario in usuarios:
+                    # Datos de este usuario
                     if 'Usuario' in df_gps.columns:
-                        datos_usuario = df_gps[df_gps['Usuario'] == usuario]
+                        datos_u = df_gps[df_gps['Usuario'] == usuario]
                     else:
-                        datos_usuario = df_gps
+                        datos_u = df_gps
                     
-                    coordenadas = datos_usuario[['Longitud', 'Latitud']].values.tolist()
+                    # Lista de coordenadas para la línea [Lat, Lon]
+                    coordenadas_linea = datos_u[['Latitud', 'Longitud']].values.tolist()
                     
-                    path_data.append({
-                        "path": coordenadas,
-                        "name": usuario,
-                        "color": color_ruta
-                    })
+                    # 1. Dibujar la LÍNEA (Ruta)
+                    folium.PolyLine(
+                        locations=coordenadas_linea,
+                        color="yellow",  # Amarillo resalta mucho en satélite
+                        weight=4,        # Grosor de la línea
+                        opacity=0.8,
+                        tooltip=f"Ruta: {usuario}"
+                    ).add_to(m)
 
-                # Capa 1: RUTA
-                layer_ruta = pdk.Layer(
-                    "PathLayer",
-                    path_data,
-                    get_path="path",
-                    get_color="color",
-                    width_scale=1,
-                    width_min_pixels=2,
-                    opacity=0.9,
-                    pickable=True
-                )
+                    # 2. Dibujar los PUNTOS (Ping GPS)
+                    for i, row in datos_u.iterrows():
+                        hora_txt = row.get('Hora', 'Unknown')
+                        folium.CircleMarker(
+                            location=[row['Latitud'], row['Longitud']],
+                            radius=3,           # Radio pequeño
+                            color='red',        # Borde rojo
+                            fill=True,
+                            fill_color='red',   # Relleno rojo
+                            fill_opacity=1,
+                            popup=f"Chofer: {usuario}<br>Hora: {hora_txt}" # Al hacer clic sale esto
+                        ).add_to(m)
 
-                # Capa 2: PUNTOS
-                layer_puntos = pdk.Layer(
-                    "ScatterplotLayer",
-                    df_gps,
-                    get_position='[Longitud, Latitud]',
-                    get_color=color_punto,
-                    get_radius=2,
-                    pickable=True,
-                    radius_min_pixels=3,
-                    radius_max_pixels=5,
-                    stroked=True,
-                    get_line_color=[255, 255, 255],
-                    line_width_min_pixels=1,
-                )
+                # Agregar control para cambiar capas si quisieras (opcional)
+                folium.LayerControl().add_to(m)
 
-                view_state = pdk.ViewState(
-                    latitude=lat_center,
-                    longitude=lon_center,
-                    zoom=16,
-                    pitch=0,
-                )
-
-                # --- D. DIBUJAR MAPA ---
-                st.pydeck_chart(pdk.Deck(
-                    map_style=map_url, 
-                    layers=[layer_ruta, layer_puntos],
-                    initial_view_state=view_state,
-                    tooltip={"text": "Chofer: {Usuario}\nHora: {Hora}\nLat: {Latitud}"}
-                ))
+                # E. MOSTRAR EN STREAMLIT
+                # width y height definen el tamaño del mapa en pantalla
+                st_folium(m, width=1200, height=600)
                 
-                # --- E. TABLA DE DATOS (PROTEGIDA) ---
-                with st.expander("🕵️ Ver datos crudos"):
-                    # Lista ideal de columnas
-                    cols_deseadas = ['Hora', 'Latitud', 'Longitud', 'Zona', 'Usuario']
-                    # Filtramos solo las que EXISTEN para que no de error KeyError
-                    cols_reales = [c for c in cols_deseadas if c in df_gps.columns]
-                    st.dataframe(df_gps[cols_reales])
+                # F. TABLA DE DATOS (Solo para verificar si algo falla)
+                with st.expander("🕵️ Ver coordenadas (Datos Crudos)"):
+                    cols_ver = [c for c in ['Hora', 'Latitud', 'Longitud', 'Usuario'] if c in df_gps.columns]
+                    st.dataframe(df_gps[cols_ver])
 
             else:
-                st.warning("Datos GPS no válidos.")
+                st.warning("Hay registros, pero las coordenadas no son válidas (NaN).")
         else:
             st.info("Esperando coordenadas GPS...")
 
