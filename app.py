@@ -150,18 +150,15 @@ def calcular_distancia(lat1, lon1, lat2, lon2):
 if not df_gps.empty:
     st.markdown("---")
     
-    # 1. NORMALIZACIÓN DE COLUMNAS (Evita el KeyError)
-    # Convertimos todos los nombres de columnas a minúsculas para trabajar seguro
+    # 1. NORMALIZACIÓN DE COLUMNAS
     df_gps.columns = [c.lower() for c in df_gps.columns]
     
-    # Mapeo de seguridad para asegurar que las variables existan
     col_lat = 'latitud' if 'latitud' in df_gps.columns else None
     col_lon = 'longitud' if 'longitud' in df_gps.columns else None
     col_user = 'usuario' if 'usuario' in df_gps.columns else None
     col_foto = 'foto' if 'foto' in df_gps.columns else None
     col_hora = 'hora' if 'hora' in df_gps.columns else None
 
-    # Limpieza de coordenadas
     if col_lat and col_lon:
         df_gps[col_lat] = pd.to_numeric(df_gps[col_lat], errors='coerce')
         df_gps[col_lon] = pd.to_numeric(df_gps[col_lon], errors='coerce')
@@ -183,7 +180,7 @@ if not df_gps.empty:
     df_filtrado = df_gps[df_gps[col_user].isin(repartidores_sel)]
 
     if not df_filtrado.empty:
-        # Crear Mapa centrado
+        # Crear Mapa
         m = folium.Map(location=[df_filtrado[col_lat].mean(), df_filtrado[col_lon].mean()], zoom_start=15, zoom_control=False)
         
         if tipo_mapa == "Satélite":
@@ -199,18 +196,18 @@ if not df_gps.empty:
             u_data = df_filtrado[df_filtrado[col_user] == nombre].reset_index(drop=True)
             distancia_total = 0.0
             
-            if len(u_data) > 1:
+            if len(u_data) > 0:
                 coords = u_data[[col_lat, col_lon]].values.tolist()
                 
-                # A. DELINEADO CON SOMBRA (GLOW)
-                folium.PolyLine(coords, color='black', weight=6, opacity=0.4).add_to(m)
-                linea = folium.PolyLine(coords, color=color, weight=2.5, opacity=1).add_to(m)
-                
-                # B. FLECHAS (1/5 Densidad)
-                folium.plugins.PolyLineTextPath(linea, '                ►                ', repeat=True, offset=8, 
-                                                attributes={'fill': color, 'font-weight': 'bold', 'font-size': '20', 'stroke': 'black', 'stroke-width': '0.5'}).add_to(m)
+                # A. LÍNEA CON SOMBRA (Si hay más de 1 punto)
+                if len(coords) > 1:
+                    folium.PolyLine(coords, color='black', weight=6, opacity=0.4).add_to(m)
+                    linea = folium.PolyLine(coords, color=color, weight=2.5, opacity=1).add_to(m)
+                    
+                    folium.plugins.PolyLineTextPath(linea, '                ►                ', repeat=True, offset=8, 
+                                                    attributes={'fill': color, 'font-weight': 'bold', 'font-size': '20', 'stroke': 'black', 'stroke-width': '0.5'}).add_to(m)
 
-                # C. HITOS TEMPORALES (📍), DISTANCIA Y PARADAS (🚩)
+                # B. HITOS, DISTANCIA Y PARADAS
                 ultima_hora_hito = None
                 for j in range(len(u_data)):
                     row = u_data.iloc[j]
@@ -229,12 +226,12 @@ if not df_gps.empty:
                                       icon=folium.DivIcon(html=f'<div style="text-align:center;"><div style="font-size:16pt;filter:drop-shadow(1px 1px 1px black);">📍</div><div style="font-size:8pt;color:white;background:rgba(0,0,0,0.7);padding:1px 3px;border-radius:3px;">{row[col_hora][:5]}</div></div>')).add_to(m)
                         ultima_hora_hito = row['hora_dt']
 
-                # D. EXTREMOS (📌 y 🏁)
+                # C. EXTREMOS (📌 y 🏁)
                 r_ini, r_fin = u_data.iloc[0], u_data.iloc[-1]
-                folium.Marker([r_ini[col_lat], r_ini[col_lon]], icon=folium.DivIcon(html=f'<div style="font-size:24pt;filter:drop-shadow(2px 2px 2px black);">📌</div>'), popup=f"SALIDA: {r_ini[col_hora]}").add_to(m)
-                folium.Marker([r_fin[col_lat]+0.00005, r_fin[col_lon]+0.00005], icon=folium.DivIcon(html=f'<div style="font-size:24pt;filter:drop-shadow(2px 2px 2px black);">🏁</div>'), popup=f"LLEGADA: {r_fin[col_hora]}").add_to(m)
+                folium.Marker([r_ini[col_lat], r_ini[col_lon]], icon=folium.DivIcon(html='<div style="font-size:24pt;filter:drop-shadow(2px 2px 2px black);">📌</div>'), popup=f"SALIDA: {r_ini[col_hora]}").add_to(m)
+                folium.Marker([r_fin[col_lat]+0.00002, r_fin[col_lon]+0.00002], icon=folium.DivIcon(html='<div style="font-size:24pt;filter:drop-shadow(2px 2px 2px black);">🏁</div>'), popup=f"LLEGADA: {r_fin[col_hora]}").add_to(m)
 
-                # E. FOTOS (Miniaturas en mapa)
+                # D. FOTOS EN MAPA
                 if col_foto and col_foto in u_data.columns:
                     for _, f_row in u_data.dropna(subset=[col_foto]).iterrows():
                         url = f_row[col_foto][0]['url'] if isinstance(f_row[col_foto], list) else f_row[col_foto]
@@ -247,7 +244,7 @@ if not df_gps.empty:
         m.fit_bounds(df_filtrado[[col_lat, col_lon]].values.tolist())
         st_folium(m, width="100%", height=650)
 
-        # 📄 SECCIÓN DE REPORTE (PDF Friendly)
+        # 📄 SECCIÓN DE REPORTE
         if modo_reporte:
             st.markdown("### 📋 Resumen de Jornada")
             st.dataframe(pd.DataFrame(resumen_datos), use_container_width=True)
@@ -256,12 +253,13 @@ if not df_gps.empty:
                 st.write("### 📸 Galería de Testigos")
                 fotos_df = df_filtrado.dropna(subset=[col_foto])
                 if not fotos_df.empty:
-                    cols = st.columns(4)
-                    for idx, row_f in fotos_list = fotos_df.reset_index().iterrows():
+                    cols_gal = st.columns(4)
+                    # AQUÍ ESTÁ LA CORRECCIÓN DEL SYNTAX ERROR:
+                    for idx, row_f in fotos_df.reset_index().iterrows():
                         url_f = row_f[col_foto][0]['url'] if isinstance(row_f[col_foto], list) else row_f[col_foto]
-                        cols[idx % 4].image(url_f, caption=f"{row_f[col_user]} - {row_f[col_hora]}")
+                        cols_gal[idx % 4].image(url_f, caption=f"{row_f[col_user]} - {row_f[col_hora]}")
     else:
-        st.info("Selecciona repartidores en la barra lateral.")
+        st.info("Selecciona repartidores.")
               
 # ------------------------------------------
 # PESTAÑA 2: MOTOR DE MIGRACIÓN
