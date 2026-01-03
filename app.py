@@ -64,22 +64,37 @@ except Exception as e:
 # FUNCIONES
 # ==========================================================
 def obtener_url_final(valor):
-    if valor is None or pd.isna(valor):
+
+    # 1️⃣ Caso Airtable: lista de archivos
+    if isinstance(valor, list):
+        if len(valor) > 0 and isinstance(valor[0], dict):
+            return valor[0].get("url")
         return None
 
-    if isinstance(valor, list) and len(valor) > 0 and isinstance(valor[0], dict):
-        return valor[0].get("url")
+    # 2️⃣ None explícito
+    if valor is None:
+        return None
 
+    # 3️⃣ NaN (solo ahora es seguro)
+    try:
+        if pd.isna(valor):
+            return None
+    except:
+        pass
+
+    # 4️⃣ String
     if isinstance(valor, str):
         val = valor.strip()
         if val.lower() in ["", "nan", "none", "[]"]:
             return None
         if val.startswith("http"):
             return val
+
         urls = re.findall(r'(https?://[^\s\)]+)', val)
         return urls[0] if urls else None
 
     return None
+
 
 def calcular_distancia(lat1, lon1, lat2, lon2):
     R = 6371
