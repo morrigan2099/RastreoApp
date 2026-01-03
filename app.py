@@ -17,49 +17,44 @@ from folium.plugins import PolyLineTextPath
 # ==========================================================
 st.set_page_config(page_title="Monitor 🗞️", layout="wide")
 
-# --- CSS RESPONSIVO AVANZADO ---
+# --- CSS MAESTRO RESPONSIVO (2 COLUMNAS FORZADAS) ---
 st.markdown("""
     <style>
-    /* Ocultar elementos de Streamlit */
     header[data-testid="stHeader"] { background: rgba(0,0,0,0) !important; }
     header[data-testid="stHeader"] button { color: var(--text-color) !important; }
     footer {visibility: hidden;}
     [data-testid="stDecoration"] {display:none;}
     .block-container { padding-top: 2rem !important; }
 
-    /* Título que se adapta al ancho de pantalla (Viewport Width) */
+    /* Título adaptable en una sola línea */
     .titulo-placeholder {
         width: 100%;
-        text-align: left;
         margin-left: 35px;
         font-weight: bold;
         white-space: nowrap;
         overflow: hidden;
-        /* font-size: 5.5vw ajusta el texto al ancho del móvil */
         font-size: clamp(16px, 5.5vw, 28px);
         color: var(--text-color);
     }
 
-    /* FORZAR GRID DE 2 COLUMNAS EN MÓVIL (A prueba de balas) */
+    /* FUERZA BRUTA PARA 2 COLUMNAS EN MÓVIL */
     @media (max-width: 768px) {
         div[data-testid="stHorizontalBlock"] {
             display: flex !important;
             flex-direction: row !important;
             flex-wrap: wrap !important;
-            align-items: flex-start !important;
         }
-        div[data-testid="column"] {
-            width: calc(50% - 8px) !important; /* Fuerza 2 por fila */
-            flex: 1 1 calc(50% - 8px) !important;
-            min-width: calc(50% - 8px) !important;
-            margin-bottom: 10px !important;
+        div[data-testid="stHorizontalBlock"] > div[data-testid="column"] {
+            width: calc(50% - 10px) !important;
+            flex: 1 1 calc(50% - 10px) !important;
+            min-width: calc(50% - 10px) !important;
         }
     }
     </style>
     """, unsafe_allow_html=True)
 
 # ==========================================================
-# CARGA DE CREDENCIALES (SECRETS)
+# CARGA DE CREDENCIALES
 # ==========================================================
 try:
     AIRTABLE_API_KEY = st.secrets["AIRTABLE_API_KEY"]
@@ -74,31 +69,24 @@ try:
     
     g_creds = dict(st.secrets["google_creds"])
     g_creds["private_key"] = g_creds["private_key"].replace("\\n", "\n")
-    creds = Credentials.from_service_account_info(
-        g_creds, 
-        scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-    )
+    creds = Credentials.from_service_account_info(g_creds, scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"])
     gc = gspread.authorize(creds)
     api = Api(AIRTABLE_API_KEY)
     table = api.table(AIRTABLE_BASE_ID, AIRTABLE_TABLE_NAME)
 except Exception as e:
-    st.error(f"❌ Error en Secrets: {e}")
+    st.error(f"❌ Error Secrets: {e}")
     st.stop()
 
 # ==========================================================
 # FUNCIONES
 # ==========================================================
 def obtener_url_final(valor):
-    if not valor or str(valor).lower() in ['nan', 'none', '', '[]']:
-        return None
+    if not valor or str(valor).lower() in ['nan', 'none', '', '[]']: return None
     val_str = str(valor).strip()
     if '(' in val_str and ')' in val_str:
         urls = re.findall(r'\((https?://[^\)]+)\)', val_str)
         if urls: return urls[0]
-    if val_str.startswith('http'): return val_str
-    if isinstance(valor, list) and len(valor) > 0:
-        return valor[0].get("url")
-    return None
+    return val_str if val_str.startswith('http') else None
 
 def calcular_distancia(lat1, lon1, lat2, lon2):
     R = 6371.0
@@ -109,10 +97,9 @@ def calcular_distancia(lat1, lon1, lat2, lon2):
 # ==========================================================
 # UI - MONITOR 🗞️
 # ==========================================================
-# Placeholder de título dinámico
 st.markdown('<div class="titulo-placeholder">🗞️ Monitor de Reparto Folletos</div>', unsafe_allow_html=True)
 
-tab1, tab2 = st.tabs(["📍 Mapa de Ruta", "☁️ Cierre de Jornada"])
+tab1, tab2 = st.tabs(["📍 Mapa", "☁️ Cierre"])
 
 with tab1:
     records = table.all()
@@ -122,19 +109,22 @@ with tab1:
 
     df = pd.DataFrame([r["fields"] for r in records])
     df.columns = [c.lower() for c in df.columns]
-    
-    rename = {c: "Latitud" if "lat" in c else "Longitud" if "lon" in c else "Usuario" if "usu" in c else "Hora" if "hora" in c else "Foto" if ("foto" in c and "etiq" not in c) else "Tipo" if "tipo" in c else c for c in df.columns}
+    rename = {c: "Latitud" if "lat" in c else "Longitud" if "lon" in c else "Usuario" if "usu" in c else "Hora" if "hora" in c else "Foto" if ("foto" in c and "etiq" not in c) else c for c in df.columns}
     df = df.rename(columns=rename)
     
     df["Latitud"] = pd.to_numeric(df["Latitud"], errors="coerce")
     df["Longitud"] = pd.to_numeric(df["Longitud"], errors="coerce")
     df = df.dropna(subset=["Latitud", "Longitud"])
     df["Usuario"] = df["Usuario"].astype(str).str.strip()
+    
+    # --- ORDEN CRONOLÓGICO MAESTRO ---
     df["Hora_dt"] = pd.to_datetime(df["Hora"], format='%H:%M:%S', errors="coerce")
+    df = df.sort_values("Hora_dt")
+    
     df["url_limpia"] = df["Foto"].apply(obtener_url_final)
 
     with st.sidebar:
-        st.header("⚙️ Filtros")
+        st.header("⚙️ Config")
         usuarios_lista = sorted(df["Usuario"].unique().tolist())
         sel_usuarios = st.multiselect("Repartidores", usuarios_lista, default=usuarios_lista)
         tipo_mapa = st.radio("Capa", ["Calle", "Satélite"])
@@ -152,7 +142,7 @@ with tab1:
 
         for i, nombre in enumerate(sel_usuarios):
             color = colores[i % len(colores)]
-            u_data = df_f[df_f["Usuario"] == nombre].sort_values("Hora_dt").reset_index(drop=True)
+            u_data = df_f[df_f["Usuario"] == nombre].reset_index(drop=True)
             
             if not u_data.empty:
                 coords = u_data[["Latitud", "Longitud"]].values.tolist()
@@ -168,8 +158,14 @@ with tab1:
                         p_next = u_data.iloc[j+1]
                         dist_u += calcular_distancia(row["Latitud"], row["Longitud"], p_next["Latitud"], p_next["Longitud"])
 
+                    # --- POPUPS DE 15 MIN REHABILITADOS 📍 ---
                     if ult_hito is None or (row["Hora_dt"] - ult_hito).total_seconds() >= 900:
-                        folium.Marker([row["Latitud"], row["Longitud"]], icon=folium.DivIcon(html=f'<div style="text-align:center;"><div style="font-size:20pt; filter: drop-shadow(1px 1px 2px black);">📍</div></div>'), z_index_offset=1000).add_to(m)
+                        folium.Marker(
+                            [row["Latitud"], row["Longitud"]],
+                            icon=folium.DivIcon(html=f'<div style="text-align:center;"><div style="font-size:20pt; filter: drop-shadow(1px 1px 2px black);">📍</div><div style="font-size:8pt; color:white; background:rgba(0,0,0,0.7); padding:2px 4px; border-radius:3px; font-weight:bold;">{row["Hora"][:5]}</div></div>'),
+                            popup=folium.Popup(f"<b>{nombre}</b><br>Hora: {row['Hora']}", max_width=150),
+                            z_index_offset=1000
+                        ).add_to(m)
                         ult_hito = row["Hora_dt"]
 
                     if row['url_limpia']:
@@ -179,28 +175,35 @@ with tab1:
                             popup=folium.Popup(f'<img src="{row["url_limpia"]}" width="150">', max_width=150)
                         ).add_to(m)
 
+                # --- POPUPS DE INICIO Y FIN REHABILITADOS ---
                 r_ini, r_fin = u_data.iloc[0], u_data.iloc[-1]
                 mismo_sitio = (abs(r_ini["Latitud"] - r_fin["Latitud"]) < 0.00005)
                 off = 0.00009 if mismo_sitio else 0
 
-                folium.Marker([r_ini["Latitud"], r_ini["Longitud"]], icon=folium.DivIcon(html=f'<div style="text-align:center;"><div style="font-size:22pt; filter: drop-shadow(2px 2px 2px black);">📌</div></div>'), z_index_offset=2000).add_to(m)
-                folium.Marker([r_fin["Latitud"] + off, r_fin["Longitud"] + off], icon=folium.DivIcon(html=f'<div style="text-align:center;"><div style="font-size:22pt; filter: drop-shadow(2px 2px 2px black);">🏁</div></div>'), z_index_offset=2000).add_to(m)
+                folium.Marker([r_ini["Latitud"], r_ini["Longitud"]], 
+                    icon=folium.DivIcon(html=f'<div style="text-align:center;"><div style="font-size:24pt; filter: drop-shadow(2px 2px 2px black);">📌</div></div>'),
+                    popup=folium.Popup(f"<b>SALIDA: {nombre}</b><br>Hora: {r_ini['Hora']}", max_width=150),
+                    z_index_offset=2000).add_to(m)
+                
+                folium.Marker([r_fin["Latitud"] + off, r_fin["Longitud"] + off], 
+                    icon=folium.DivIcon(html=f'<div style="text-align:center;"><div style="font-size:24pt; filter: drop-shadow(2px 2px 2px black);">🏁</div></div>'),
+                    popup=folium.Popup(f"<b>LLEGADA: {nombre}</b><br>Hora: {r_fin['Hora']}", max_width=150),
+                    z_index_offset=2000).add_to(m)
 
                 resumen_jornada.append({"Repartidor": nombre, "📸": u_data['url_limpia'].notna().sum(), "Dist.": f"{dist_u:.2f} km"})
 
-        st_folium(m, width="100%", height=450, returned_objects=[])
+        m.fit_bounds(df_f[["Latitud", "Longitud"]].values.tolist())
+        st_folium(m, width="100%", height=400, returned_objects=[])
 
         st.markdown("---")
         st.write("**📊 Resumen**")
         st.dataframe(pd.DataFrame(resumen_jornada), use_container_width=True, hide_index=True)
         
-        st.write("**📸 Evidencias (Orden Cronológico)**")
-        # --- FILTRO Y ORDEN CRONOLÓGICO ---
-        df_gal = df_f[df_f['url_limpia'].notna()].sort_values("Hora_dt")
-        
+        st.write("**📸 Evidencias (Cronológico)**")
+        # --- GALERÍA 2 COLUMNAS EN MÓVIL ---
+        df_gal = df_f[df_f['url_limpia'].notna()]
         if not df_gal.empty:
-            # En escritorio st.columns(4) funciona bien.
-            # En móvil, el CSS inyectado arriba forzará que esto se vea como 2 columnas.
+            # st.columns(2) para PC y el CSS forzará que se queden en 2 para Móvil también
             cols = st.columns(4) 
             for i, (_, row) in enumerate(df_gal.iterrows()):
                 with cols[i % 4]:
