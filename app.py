@@ -17,39 +17,37 @@ from folium.plugins import PolyLineTextPath
 # ==========================================================
 st.set_page_config(page_title="Monitor 🗞️", layout="wide")
 
-# --- CSS MAESTRO: SIDEBAR VISIBLE + GRID 2x2 MÓVIL ---
+# --- CSS MAESTRO: MODO OSCURO + MARGENES ---
 st.markdown("""
     <style>
-    /* Ocultar fondo del header pero DEJAR EL BOTÓN DEL SIDEBAR */
+    /* Ocultar fondo del header pero mantener botones */
     header[data-testid="stHeader"] {
-        background: rgba(0,0,0,0);
-        color: transparent;
-    }
-    header[data-testid="stHeader"] button {
-        color: #31333F !important; /* Color del botón de las 3 rayitas */
+        background: rgba(0,0,0,0) !important;
     }
     
-    /* Ocultar Footer y decoración superior */
+    /* Forzar color del botón de Sidebar según el tema */
+    header[data-testid="stHeader"] button {
+        color: var(--text-color) !important;
+    }
+    
     footer {visibility: hidden;}
     [data-testid="stDecoration"] {display:none;}
     
-    /* Ajuste de margen superior para el título */
-    .block-container { padding-top: 0rem !important; }
-
-    /* Título Responsivo */
+    /* Título Responsivo y Adaptable al Tema */
     .titulo-texto { 
         font-weight: bold; 
-        color: #31333F; 
-        font-size: 20px; 
-        margin-left: 35px; /* Espacio para que no lo tape el botón del sidebar */
+        color: inherit; /* Hereda el color del tema (Blanco o Negro) */
+        font-size: 20px;
     }
 
-    /* FORZAR 2 COLUMNAS EN MÓVIL */
+    /* Ajustes específicos para Móvil */
     @media (max-width: 768px) {
+        .block-container { 
+            padding-top: 25px !important; /* Baja el contenido 25px */
+        }
         [data-testid="stHorizontalBlock"] {
             flex-direction: row !important;
             flex-wrap: wrap !important;
-            gap: 10px !important;
         }
         [data-testid="column"] {
             width: calc(50% - 10px) !important;
@@ -112,8 +110,8 @@ def calcular_distancia(lat1, lon1, lat2, lon2):
 # ==========================================================
 # UI - MONITOR 🗞️
 # ==========================================================
-# Título que no choca con el Sidebar
-st.markdown('<div style="padding-top: 10px;"><span class="titulo-texto">🗞️ Monitor Reparto Folletos</span></div>', unsafe_allow_html=True)
+# Título con margen superior y color dinámico
+st.markdown('<div style="margin-top: 15px; margin-left: 40px;"><span class="titulo-texto">🗞️ Monitor Reparto Folletos</span></div>', unsafe_allow_html=True)
 
 tab1, tab2 = st.tabs(["📍 Mapa", "☁️ Cierre"])
 
@@ -201,7 +199,6 @@ with tab1:
         st.write("**📸 Evidencias (Toca para ampliar)**")
         df_gal = df_f[df_f['url_limpia'].notna()]
         if not df_gal.empty:
-            # Grid de 2 columnas en móvil forzado por CSS
             cols = st.columns(4) 
             for i, (_, row) in enumerate(df_gal.iterrows()):
                 with cols[i % 4]:
