@@ -52,7 +52,7 @@ def calcular_distancia(lat1, lon1, lat2, lon2):
     return R * (2 * math.atan2(math.sqrt(a), math.sqrt(1 - a)))
 
 # ==========================================================
-# DATOS
+# PROCESAMIENTO
 # ==========================================================
 records = table.all()
 if not records:
@@ -96,11 +96,11 @@ if not sel_usuarios:
     st.stop()
 
 # ==========================================================
-# CSS (ESTILOS BLINDADOS PARA IMPRESIÓN)
+# CSS BLINDADO
 # ==========================================================
+# 1. Estilos Estáticos
 css_estatico = """
 <style>
-/* 1. LIMPIEZA */
 .block-container {
     padding: 1rem !important;
     max-width: 100% !important;
@@ -110,115 +110,42 @@ header[data-testid="stHeader"] button { color: var(--text-color) !important; z-i
 [data-testid="stDecoration"] { display: none !important; }
 footer { display: none !important; }
 
-/* 2. REGLAS IMPRESIÓN */
 @media print {
     @page { size: landscape; margin: 0.5cm; }
     [data-testid="stSidebar"] { display: none !important; }
     header, footer { display: none !important; }
     .stApp { margin: 0 !important; }
     body { -webkit-print-color-adjust: exact; background-color: white !important; color: black !important; }
-    
-    .page-break { 
-        page-break-before: always !important; 
-        break-before: page !important; 
-        display: block; height: 0; margin: 0;
-    }
+    .page-break { page-break-before: always !important; break-before: page !important; display: block; height: 0; margin: 0; }
 }
 
-/* 3. TÍTULO */
+/* TÍTULO */
 .title-container {
-    display: flex;
-    align-items: center;
-    margin-bottom: 10px;
-    margin-left: 0px;
-    color: var(--text-color);
-    /* Importante para que no se corte al imprimir */
-    padding: 10px; 
-    overflow: visible;
+    display: flex; align-items: center; margin-bottom: 10px; margin-left: 0px; color: var(--text-color); padding: 10px; overflow: visible;
 }
-.title-emoji {
-    margin-right: 20px;
-    line-height: 1.2; /* Aumentado para evitar cortes */
-    padding-bottom: 5px;
-}
+.title-emoji { margin-right: 20px; line-height: 1.2; padding-bottom: 5px; }
 .title-text-block { display: flex; flex-direction: column; justify-content: center; }
-.title-main {
-    font-weight: 900;
-    line-height: 1.1; /* Más aire */
-    text-transform: uppercase;
-}
-.title-sub {
-    font-weight: 600;
-    line-height: 1.2;
-    opacity: 0.9;
-}
+.title-main { font-weight: 900; line-height: 1.1; text-transform: uppercase; }
+.title-sub { font-weight: 600; line-height: 1.2; opacity: 0.9; }
 
-/* 4. TABLA DE ESTADÍSTICAS PERSONALIZADA */
-.custom-stats-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-family: sans-serif;
-    margin-top: 10px;
-}
-.custom-stats-table th {
-    background-color: #000;
-    color: #fff;
-    padding: 8px 12px;
-    text-align: left;
-    font-size: 16px;
-    border: 2px solid #000;
-}
-.custom-stats-table td {
-    border: 2px solid #000; /* Borde grueso */
-    padding: 8px 12px;
-    font-size: 18px; /* Texto Grande */
-    font-weight: bold; /* Negrita */
-    color: #000;
-}
-.color-dot {
-    display: inline-block;
-    width: 15px;
-    height: 15px;
-    border-radius: 50%;
-    margin-right: 8px;
-    border: 1px solid #000;
-    vertical-align: middle;
-}
+/* TABLA PERSONALIZADA */
+.custom-stats-table { width: 100%; border-collapse: collapse; font-family: sans-serif; margin-top: 5px; }
+.custom-stats-table th { background-color: #000; color: #fff; padding: 6px 10px; text-align: left; font-size: 14px; border: 2px solid #000; }
+.custom-stats-table td { border: 2px solid #000; padding: 6px 10px; font-size: 16px; font-weight: bold; color: #000; }
+.color-dot { display: inline-block; width: 14px; height: 14px; border-radius: 50%; margin-right: 8px; border: 1px solid #000; vertical-align: middle; }
 
-/* 5. GALERÍA */
-.gallery-container {
-    display: flex;
-    flex-wrap: wrap;
-    margin: 0 -4px;
-    justify-content: flex-start;
-}
-.gallery-item {
-    box-sizing: border-box;
-    padding: 4px;
-}
-@media (max-width: 768px) {
-    .gallery-item { width: 50% !important; } 
-}
+/* GALERÍA */
+.gallery-container { display: flex; flex-wrap: wrap; margin: 0 -4px; justify-content: flex-start; }
+.gallery-item { box-sizing: border-box; padding: 4px; }
+@media (max-width: 768px) { .gallery-item { width: 50% !important; } }
 
-.photo-card {
-    border: 1px solid #ddd;
-    border-radius: 6px;
-    background-color: #f0f2f6;
-    overflow: hidden;
-    height: 210px;
-    display: flex; flex-direction: column;
-}
-.photo-card img {
-    width: 100%; height: 185px; object-fit: contain; background-color: #ababb3;
-}
-.photo-caption {
-    height: 25px; background: #fff; color: #000; font-size: 10px; font-weight: 600;
-    display: flex; align-items: center; justify-content: center; border-top: 1px solid #ccc;
-}
+.photo-card { border: 1px solid #ddd; border-radius: 6px; background-color: #f0f2f6; overflow: hidden; height: 210px; display: flex; flex-direction: column; }
+.photo-card img { width: 100%; height: 185px; object-fit: contain; background-color: #ababb3; }
+.photo-caption { height: 25px; background: #fff; color: #000; font-size: 10px; font-weight: 600; display: flex; align-items: center; justify-content: center; border-top: 1px solid #ccc; }
 </style>
 """
 
-# AJUSTES TAMAÑO SEGÚN MODO
+# 2. Estilos Dinámicos
 size_emoji = '90px' if modo_reporte else 'clamp(50px, 14vw, 75px)'
 size_main = '50px' if modo_reporte else 'clamp(28px, 8vw, 42px)'
 size_sub = '28px' if modo_reporte else 'clamp(16px, 5vw, 24px)'
@@ -232,41 +159,52 @@ css_dinamico = f"""
 .gallery-item {{ width: {width_item}; }}
 </style>
 """
-
 st.markdown(css_estatico + css_dinamico, unsafe_allow_html=True)
 
 # ==========================================================
-# CÁLCULOS
+# PRE-CÁLCULO DE DATOS (TABLA HTML Y COORDENADAS)
 # ==========================================================
 df_f = df[df["Usuario"].isin(sel_usuarios)].copy()
-stats_rows = [] # Lista para la tabla HTML
-all_coords = []
 colores = ['#FF0000', '#00FF00', '#0000FF', '#FF00FF', '#FF8C00']
 
-# Calculamos todo antes de pintar
+stats_rows_html = []
+all_coords = []
+
+# Bucle para generar datos de la tabla y coordenadas del mapa
 for i, nombre in enumerate(sel_usuarios):
-    color = colores[i % len(colores)] # Color asignado
+    color = colores[i % len(colores)]
     u_data = df_f[df_f["Usuario"] == nombre]
+    
+    # Distancia
     dist_u = 0.0
     coords = u_data[["Latitud", "Longitud"]].values.tolist()
     all_coords.extend(coords)
-    
     if len(coords) > 1:
         for k in range(len(coords)-1):
             dist_u += calcular_distancia(coords[k][0], coords[k][1], coords[k+1][0], coords[k+1][1])
-    
-    # Preparamos fila HTML para estadísticas
+            
+    # Fotos
     fotos_count = u_data['url_limpia'].notna().sum()
     dist_fmt = f"{dist_u:.2f} km"
-    stats_rows.append(f"""
-        <tr>
-            <td><span class="color-dot" style="background-color: {color};"></span>{nombre}</td>
-            <td>{fotos_count}</td>
-            <td>{dist_fmt}</td>
-        </tr>
-    """)
+    
+    # CREACIÓN DE FILA HTML (EN UNA SOLA LÍNEA PARA NO ROMPER MARKDOWN)
+    row_html = f'<tr><td><span class="color-dot" style="background-color: {color};"></span>{nombre}</td><td>{fotos_count}</td><td>{dist_fmt}</td></tr>'
+    stats_rows_html.append(row_html)
 
-# TÍTULO HTML
+# Unimos las filas
+rows_str = "".join(stats_rows_html)
+
+# Construimos la Tabla Completa
+html_tabla = f"""
+<table class="custom-stats-table">
+    <thead>
+        <tr><th>Repartidor</th><th>Fotos</th><th>Distancia</th></tr>
+    </thead>
+    <tbody>{rows_str}</tbody>
+</table>
+"""
+
+# Título HTML
 html_titulo = """
 <div class="title-container">
     <div class="title-emoji">🏃🏽‍♂️</div>
@@ -277,35 +215,18 @@ html_titulo = """
 </div>
 """
 
-# TABLA HTML
-html_tabla = f"""
-<table class="custom-stats-table">
-    <thead>
-        <tr>
-            <th>Repartidor</th>
-            <th>Fotos</th>
-            <th>Distancia</th>
-        </tr>
-    </thead>
-    <tbody>
-        {"".join(stats_rows)}
-    </tbody>
-</table>
-"""
-
 # ==========================================================
-# RENDERIZADO: PÁGINA 1
+# RENDERIZADO VISUAL
 # ==========================================================
 
+# 1. PÁGINA 1: Encabezado y Mapa
 if modo_reporte:
-    # MODO REPORTE: Layout Horizontal (Título | Tabla)
     col1, col2 = st.columns([1.5, 1])
     with col1:
         st.markdown(html_titulo, unsafe_allow_html=True)
     with col2:
-        st.markdown(html_tabla, unsafe_allow_html=True) # Tabla HTML personalizada
+        st.markdown(html_tabla, unsafe_allow_html=True)
 else:
-    # MODO NORMAL: Título arriba
     st.markdown(html_titulo, unsafe_allow_html=True)
 
 # MAPA
@@ -323,6 +244,7 @@ for i, nombre in enumerate(sel_usuarios):
         coords = u_data[["Latitud", "Longitud"]].values.tolist()
         if len(coords) > 1:
             linea = folium.PolyLine(coords, color=color, weight=4, opacity=0.8).add_to(m)
+            # Flechas
             PolyLineTextPath(linea, '                    ▶                    ', repeat=True, offset=20, attributes={'fill': color, 'font-size': '12'}).add_to(m)
 
         r_ini, r_fin = u_data.iloc[0], u_data.iloc[-1]
@@ -338,24 +260,21 @@ for i, nombre in enumerate(sel_usuarios):
                         icon=folium.DivIcon(html=f'<div style="width:30px; height:30px; border:2px solid {color}; background:white; border-radius:4px; overflow:hidden;"><img src="{row["url_limpia"]}" style="width:100%; height:100%; object-fit:cover;"></div>'),
                         popup=folium.Popup(popup_html, max_width=230)).add_to(m)
 
-if all_coords: m.fit_bounds(all_coords)
+if all_coords:
+    m.fit_bounds(all_coords)
 
 st_folium(m, width="100%", height=alto_mapa, returned_objects=[])
 
-# ESTADÍSTICAS MODO NORMAL (Abajo del mapa)
+# ESTADÍSTICAS (Si es modo normal, van abajo)
 if not modo_reporte:
     st.markdown("### 📊 Estadísticas")
     st.markdown(html_tabla, unsafe_allow_html=True)
 
-# ==========================================================
 # CORTE DE PÁGINA
-# ==========================================================
 if modo_reporte:
     st.markdown('<div class="page-break"></div>', unsafe_allow_html=True)
 
-# ==========================================================
-# RENDERIZADO: PÁGINA 2 (GALERÍA)
-# ==========================================================
+# 2. PÁGINA 2: Galería
 titulo_galeria = "**📸 Evidencias Fotográficas**" if modo_reporte else "### 📸 Evidencias"
 st.markdown(titulo_galeria)
 
@@ -366,6 +285,7 @@ if not df_gal.empty:
         url = row['url_limpia']
         user = str(row['Usuario']).split()[0].replace("<","").replace(">","")
         hora = str(row['Hora'])[:5]
+        # HTML en una línea
         html_parts.append(f'<div class="gallery-item"><a href="{url}" target="_blank" style="text-decoration:none;"><div class="photo-card"><img src="{url}" loading="lazy"><div class="photo-caption">{user} {hora}</div></div></a></div>')
     html_parts.append('</div>')
     st.markdown("".join(html_parts), unsafe_allow_html=True)
