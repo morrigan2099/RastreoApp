@@ -17,29 +17,46 @@ from folium.plugins import PolyLineTextPath
 # ==========================================================
 st.set_page_config(page_title="Monitor 🗞️", layout="wide")
 
-# --- CSS MAESTRO: RESPONSIVO + OCULTAR BARRAS + FORZAR GRID ---
+# --- CSS MAESTRO: SIDEBAR VISIBLE + GRID 2x2 MÓVIL ---
 st.markdown("""
     <style>
-    /* Ocultar elementos de Streamlit */
-    header {visibility: hidden;}
+    /* Ocultar fondo del header pero DEJAR EL BOTÓN DEL SIDEBAR */
+    header[data-testid="stHeader"] {
+        background: rgba(0,0,0,0);
+        color: transparent;
+    }
+    header[data-testid="stHeader"] button {
+        color: #31333F !important; /* Color del botón de las 3 rayitas */
+    }
+    
+    /* Ocultar Footer y decoración superior */
     footer {visibility: hidden;}
     [data-testid="stDecoration"] {display:none;}
     
-    /* Ajuste de márgenes */
-    .block-container { padding-top: 1rem !important; }
+    /* Ajuste de margen superior para el título */
+    .block-container { padding-top: 0rem !important; }
 
-    /* Título Dinámico */
-    .titulo-texto { font-weight: bold; color: #31333F; }
-    
-    @media (min-width: 800px) { .titulo-texto { font-size: 28px; } }
-    @media (max-width: 799px) { 
-        .titulo-texto { font-size: 18px; white-space: nowrap; }
-        /* FORZAR 2 COLUMNAS EN MÓVIL PARA LA GALERÍA */
+    /* Título Responsivo */
+    .titulo-texto { 
+        font-weight: bold; 
+        color: #31333F; 
+        font-size: 20px; 
+        margin-left: 35px; /* Espacio para que no lo tape el botón del sidebar */
+    }
+
+    /* FORZAR 2 COLUMNAS EN MÓVIL */
+    @media (max-width: 768px) {
+        [data-testid="stHorizontalBlock"] {
+            flex-direction: row !important;
+            flex-wrap: wrap !important;
+            gap: 10px !important;
+        }
         [data-testid="column"] {
             width: calc(50% - 10px) !important;
             flex: 1 1 calc(50% - 10px) !important;
             min-width: calc(50% - 10px) !important;
         }
+        .titulo-texto { font-size: 16px; white-space: nowrap; }
     }
     </style>
     """, unsafe_allow_html=True)
@@ -95,7 +112,8 @@ def calcular_distancia(lat1, lon1, lat2, lon2):
 # ==========================================================
 # UI - MONITOR 🗞️
 # ==========================================================
-st.markdown('<div style="padding-bottom:10px;"><span style="font-size: 22px;">🗞️</span> <span class="titulo-texto">Monitor de Reparto Folletos</span></div>', unsafe_allow_html=True)
+# Título que no choca con el Sidebar
+st.markdown('<div style="padding-top: 10px;"><span class="titulo-texto">🗞️ Monitor Reparto Folletos</span></div>', unsafe_allow_html=True)
 
 tab1, tab2 = st.tabs(["📍 Mapa", "☁️ Cierre"])
 
@@ -119,7 +137,7 @@ with tab1:
     df["url_limpia"] = df["Foto"].apply(obtener_url_final)
 
     with st.sidebar:
-        st.header("⚙️ Filtros")
+        st.header("⚙️ Config")
         usuarios_lista = sorted(df["Usuario"].unique().tolist())
         sel_usuarios = st.multiselect("Repartidores", usuarios_lista, default=usuarios_lista)
         tipo_mapa = st.radio("Capa", ["Calle", "Satélite"])
@@ -173,7 +191,8 @@ with tab1:
 
                 resumen_jornada.append({"Repartidor": nombre, "📸": u_data['url_limpia'].notna().sum(), "Dist.": f"{dist_u:.2f} km"})
 
-        st_folium(m, width="100%", height=400, returned_objects=[])
+        m.fit_bounds(df_f[["Latitud", "Longitud"]].values.tolist())
+        st_folium(m, width="100%", height=450, returned_objects=[])
 
         st.markdown("---")
         st.write("**📊 Resumen**")
@@ -182,12 +201,11 @@ with tab1:
         st.write("**📸 Evidencias (Toca para ampliar)**")
         df_gal = df_f[df_f['url_limpia'].notna()]
         if not df_gal.empty:
-            # Usamos st.columns(4) pero el CSS forzará 2 en móvil
-            cols = st.columns(4)
+            # Grid de 2 columnas en móvil forzado por CSS
+            cols = st.columns(4) 
             for i, (_, row) in enumerate(df_gal.iterrows()):
                 with cols[i % 4]:
-                    # st.image renderiza nativamente y permite zoom al tocar
-                    st.image(row['url_limpia'], caption=f"{row['Usuario']} {row['Hora'][:5]}", use_container_width=True)
+                    st.image(row['url_limpia'], caption=f"{row['Usuario'].split()[0]} {row['Hora'][:5]}", use_container_width=True)
 
 with tab2:
     st.header("Cierre")
