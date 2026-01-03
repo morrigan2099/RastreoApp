@@ -15,13 +15,13 @@ from folium.plugins import PolyLineTextPath
 st.set_page_config(page_title="Siguiendo-T", layout="wide")
 
 # ==========================================================
-# CSS MAESTRO
+# CSS MAESTRO (Nuevo Título de 2 Líneas + Galería Blindada)
 # ==========================================================
 st.markdown("""
 <style>
 /* 1. SIDEBAR Y LIMPIEZA */
 .block-container {
-    padding-top: 1rem !important;
+    padding-top: 0.5rem !important; /* Menos espacio arriba */
     padding-bottom: 0rem !important;
 }
 header[data-testid="stHeader"] { background: transparent !important; }
@@ -29,20 +29,50 @@ header[data-testid="stHeader"] button { color: var(--text-color) !important; z-i
 [data-testid="stDecoration"] { display: none !important; }
 footer { display: none !important; }
 
-/* 2. TÍTULO (Ajustado) */
-.titulo-smart {
-    margin-left: 5px; 
-    margin-top: 20px; /* Bajado un poco más */
-    margin-bottom: 10px;
-    text-align: left;
-    font-weight: bold; 
-    font-size: clamp(22px, 7vw, 32px); 
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    color: var(--text-color);
-    line-height: 1.2;
+/* 2. NUEVO DISEÑO DE TÍTULO (2 Columnas, la derecha con 2 filas) */
+.title-container {
+    display: flex;
+    align-items: center; /* Centrado verticalmente */
+    margin-top: 15px; /* Espacio desde el tope */
+    margin-left: 50px; /* Espacio para el botón del menú */
+    margin-bottom: 20px;
+    color: var(--text-color); /* Se adapta al modo oscuro/claro */
 }
 
-/* 3. GALERÍA GRID HTML BLINDADA (2 Columnas Móvil / 4 Escritorio) */
+/* Columna Izq: Emoji Gigante */
+.title-emoji {
+    font-size: clamp(45px, 12vw, 65px); /* Tamaño dinámico muy grande */
+    margin-right: 15px; /* Separación del texto */
+    line-height: 1; /* Evita espacio extra arriba/abajo */
+    display: flex;
+    align-items: center;
+}
+
+/* Columna Der: Bloque de Texto (2 filas) */
+.title-text-block {
+    display: flex;
+    flex-direction: column; /* Apila los textos verticalmente */
+    justify-content: center;
+}
+
+/* Fila 1 de texto: Título Principal */
+.title-main {
+    font-weight: 900; /* Extra negrita */
+    font-size: clamp(24px, 7vw, 34px); /* Grande y responsive */
+    line-height: 1.1; /* Pegadito */
+    text-transform: uppercase; /* Mayúsculas para impacto */
+}
+
+/* Fila 2 de texto: Subtítulo */
+.title-sub {
+    font-weight: 600; /* Negrita media */
+    font-size: clamp(16px, 4vw, 20px); /* Tamaño medio */
+    line-height: 1.1;
+    opacity: 0.9; /* Un poquito más suave */
+}
+
+
+/* 3. GALERÍA GRID HTML BLINDADA (2 Col Móvil / 4 Col Escritorio) */
 .gallery-container {
     display: flex;
     flex-wrap: wrap;
@@ -77,8 +107,8 @@ footer { display: none !important; }
 .photo-card img {
     width: 100%;
     height: 185px;
-    object-fit: contain; /* Ajuste proporcional sin recortes */
-    background-color: #ababb3; /* Fondo neutro */
+    object-fit: contain;
+    background-color: #ababb3;
 }
 
 .photo-caption {
@@ -137,8 +167,18 @@ def calcular_distancia(lat1, lon1, lat2, lon2):
 # ==========================================================
 # APP
 # ==========================================================
-# Título actualizado
-st.markdown('<div class="titulo-smart">🏃‍♂️ Siguiendo-T Monitor</div>', unsafe_allow_html=True)
+
+# --- NUEVA ESTRUCTURA DE TÍTULO (HTML) ---
+titulo_html = """
+<div class="title-container">
+    <div class="title-emoji">🏃‍♂️</div>
+    <div class="title-text-block">
+        <div class="title-main">Siguiendo-T</div>
+        <div class="title-sub">Monitor de Reparto</div>
+    </div>
+</div>
+"""
+st.markdown(titulo_html, unsafe_allow_html=True)
 
 tab1, tab2 = st.tabs(["📍 Mapa", "☁️ Cierre"])
 
@@ -192,7 +232,6 @@ with tab1:
                 
                 if len(coords) > 1:
                     linea = folium.PolyLine(coords, color=color, weight=4).add_to(m)
-                    # Flecha sutil (▶ tamaño 12)
                     PolyLineTextPath(linea, ' ▶ ', repeat=True, offset=15, attributes={'fill': color, 'font-size': '12'}).add_to(m)
 
                 ult_hito = None
@@ -207,7 +246,6 @@ with tab1:
                         ult_hito = row["Hora_dt"]
                     
                     if row['url_limpia']:
-                        # Popup con imagen controlada (max 220px)
                         popup_html = f'<img src="{row["url_limpia"]}" style="max-width:220px; max-height:220px; object-fit:contain; border-radius:4px;">'
                         
                         folium.Marker([row["Latitud"], row["Longitud"]],
@@ -235,7 +273,6 @@ with tab1:
                 url = row['url_limpia']
                 user = str(row['Usuario']).split()[0].replace("<","").replace(">","")
                 hora = str(row['Hora'])[:5]
-                # HTML compactado en una línea para evitar errores de renderizado
                 html_parts.append(f'<div class="gallery-item"><a href="{url}" target="_blank" style="text-decoration:none;"><div class="photo-card"><img src="{url}" loading="lazy"><div class="photo-caption">{user} {hora}</div></div></a></div>')
             html_parts.append('</div>')
             st.markdown("".join(html_parts), unsafe_allow_html=True)
