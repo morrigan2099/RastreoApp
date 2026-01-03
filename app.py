@@ -17,65 +17,29 @@ from folium.plugins import PolyLineTextPath
 # ==========================================================
 st.set_page_config(page_title="Monitor 🗞️", layout="wide")
 
-# --- CSS MAESTRO: RESPONSIVO + OCULTAR BARRAS STREAMLIT ---
+# --- CSS MAESTRO: RESPONSIVO + OCULTAR BARRAS + FORZAR GRID ---
 st.markdown("""
     <style>
-    /* Ocultar Header de Streamlit y Footer (Manage App) */
+    /* Ocultar elementos de Streamlit */
     header {visibility: hidden;}
-    #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     [data-testid="stDecoration"] {display:none;}
-    [data-testid="stStatusWidget"] {display:none;}
     
-    /* Ajuste de márgenes para ganar espacio arriba */
-    .block-container { padding-top: 0.5rem !important; padding-bottom: 0rem !important; }
+    /* Ajuste de márgenes */
+    .block-container { padding-top: 1rem !important; }
 
     /* Título Dinámico */
     .titulo-texto { font-weight: bold; color: #31333F; }
     
-    /* Desktop */
-    @media (min-width: 800px) {
-        .titulo-texto { font-size: 28px; }
-        .galeria-grid {
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 15px;
-        }
-    }
-
-    /* Móvil */
-    @media (max-width: 799px) {
+    @media (min-width: 800px) { .titulo-texto { font-size: 28px; } }
+    @media (max-width: 799px) { 
         .titulo-texto { font-size: 18px; white-space: nowrap; }
-        .galeria-grid {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 8px;
+        /* FORZAR 2 COLUMNAS EN MÓVIL PARA LA GALERÍA */
+        [data-testid="column"] {
+            width: calc(50% - 10px) !important;
+            flex: 1 1 calc(50% - 10px) !important;
+            min-width: calc(50% - 10px) !important;
         }
-    }
-
-    /* Cards de la Galería */
-    .foto-card {
-        width: 100%;
-        border-radius: 10px;
-        overflow: hidden;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-        background: white;
-        border: 1px solid #eee;
-    }
-    .foto-img {
-        width: 100%;
-        aspect-ratio: 1 / 1;
-        object-fit: cover;
-        display: block;
-        cursor: pointer;
-    }
-    .foto-pie {
-        font-size: 11px;
-        padding: 6px;
-        text-align: center;
-        color: #555;
-        font-weight: 500;
-        background: #f9f9f9;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -133,7 +97,7 @@ def calcular_distancia(lat1, lon1, lat2, lon2):
 # ==========================================================
 st.markdown('<div style="padding-bottom:10px;"><span style="font-size: 22px;">🗞️</span> <span class="titulo-texto">Monitor de Reparto Folletos</span></div>', unsafe_allow_html=True)
 
-tab1, tab2 = st.tabs(["📍 Mapa de Ruta", "☁️ Cierre de Jornada"])
+tab1, tab2 = st.tabs(["📍 Mapa", "☁️ Cierre"])
 
 with tab1:
     records = table.all()
@@ -181,9 +145,7 @@ with tab1:
                 
                 if len(coords) > 1:
                     linea = folium.PolyLine(coords, color=color, weight=4, opacity=0.8).add_to(m)
-                    PolyLineTextPath(linea, '                ►                ', 
-                                     repeat=True, offset=8, 
-                                     attributes={'fill': color, 'font-weight': 'bold', 'font-size': '22', 'stroke': 'black', 'stroke-width': '1'}).add_to(m)
+                    PolyLineTextPath(linea, '                ►                ', repeat=True, offset=8, attributes={'fill': color, 'font-weight': 'bold', 'font-size': '22', 'stroke': 'black', 'stroke-width': '1'}).add_to(m)
 
                 ult_hito = None
                 for j, row in u_data.iterrows():
@@ -211,27 +173,21 @@ with tab1:
 
                 resumen_jornada.append({"Repartidor": nombre, "📸": u_data['url_limpia'].notna().sum(), "Dist.": f"{dist_u:.2f} km"})
 
-        m.fit_bounds(df_f[["Latitud", "Longitud"]].values.tolist())
         st_folium(m, width="100%", height=400, returned_objects=[])
 
-        # --- SECCIÓN RESPONSIVA ---
         st.markdown("---")
         st.write("**📊 Resumen**")
         st.dataframe(pd.DataFrame(resumen_jornada), use_container_width=True, hide_index=True)
         
-        st.write("**📸 Evidencias (Toca para pantalla completa)**")
+        st.write("**📸 Evidencias (Toca para ampliar)**")
         df_gal = df_f[df_f['url_limpia'].notna()]
         if not df_gal.empty:
-            galeria_html = '<div class="galeria-grid">'
-            for _, row in df_gal.iterrows():
-                galeria_html += f'''
-                <div class="foto-card">
-                    <img src="{row['url_limpia']}" class="foto-img" onclick="window.open('{row['url_limpia']}', '_blank')">
-                    <div class="foto-pie">{row['Usuario']} - {row['Hora'][:5]}</div>
-                </div>
-                '''
-            galeria_html += '</div>'
-            st.markdown(galeria_html, unsafe_allow_html=True)
+            # Usamos st.columns(4) pero el CSS forzará 2 en móvil
+            cols = st.columns(4)
+            for i, (_, row) in enumerate(df_gal.iterrows()):
+                with cols[i % 4]:
+                    # st.image renderiza nativamente y permite zoom al tocar
+                    st.image(row['url_limpia'], caption=f"{row['Usuario']} {row['Hora'][:5]}", use_container_width=True)
 
 with tab2:
     st.header("Cierre")
