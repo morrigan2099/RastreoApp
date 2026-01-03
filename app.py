@@ -120,35 +120,38 @@ with tab1:
                 coords = u_data[["Latitud", "Longitud"]].values.tolist()
                 dist_u = 0.0
                 
-                # 1. RUTA
+                # 1. RUTA (FLECHAS 1/4)
                 if len(coords) > 1:
                     linea = folium.PolyLine(coords, color=color, weight=4, opacity=0.8).add_to(m)
                     PolyLineTextPath(linea, '                                ►                                ', 
                                      repeat=True, offset=8, 
                                      attributes={'fill': color, 'font-weight': 'bold', 'font-size': '22', 'stroke': 'black', 'stroke-width': '1'}).add_to(m)
 
-                # 2. MINIATURAS Y KM
+                # 2. MINIATURAS HD Y KM
                 for j, row in u_data.iterrows():
                     if j < len(u_data) - 1:
                         p_next = u_data.iloc[j+1]
                         dist_u += calcular_distancia(row["Latitud"], row["Longitud"], p_next["Latitud"], p_next["Longitud"])
 
                     if row['url_limpia']:
-                        # Offset para no tapar el emoji si coincide
-                        img_off = 0.00015 if (j == 0 or j == len(u_data)-1) else 0
+                        # Ajuste leve de la foto si está en los extremos
+                        img_off = 0.00005 if (j == 0 or j == len(u_data)-1) else 0
                         folium.Marker(
                             [row["Latitud"] - img_off, row["Longitud"] - img_off],
                             icon=folium.DivIcon(html=f'''
                                 <div style="width:55px; height:55px; border:3px solid {color}; background:white; box-shadow:2px 2px 6px black; border-radius:6px; overflow:hidden; display:flex;">
                                     <img src="{row['url_limpia']}" style="width:100%; height:100%; object-fit:cover; transform:scale(1.4);">
                                 </div>'''),
-                            popup=folium.Popup(f'<b>{nombre}</b><br><img src="{row["url_limpia"]}" width="200">', max_width=200)
+                            popup=folium.Popup(f'<b>{nombre}</b><br><img src="{row["url_limpia"]}" width="200">', max_width=200),
+                            z_index_offset=100
                         ).add_to(m)
 
-                # 3. INICIO Y FIN (DESPLAZADOS)
+                # 3. INICIO Y FIN (OFFSET REDUCIDO A 1/5)
                 r_ini, r_fin = u_data.iloc[0], u_data.iloc[-1]
-                mismo_sitio = (abs(r_ini["Latitud"] - r_fin["Latitud"]) < 0.0001 and abs(r_ini["Longitud"] - r_fin["Longitud"]) < 0.0001)
-                off = 0.00045 if mismo_sitio else 0
+                mismo_sitio = (abs(r_ini["Latitud"] - r_fin["Latitud"]) < 0.00005 and abs(r_ini["Longitud"] - r_fin["Longitud"]) < 0.00005)
+                
+                # Un quinto de la distancia anterior (9 metros aprox)
+                off = 0.00009 if mismo_sitio else 0
 
                 folium.Marker([r_ini["Latitud"], r_ini["Longitud"]], 
                     icon=folium.DivIcon(html=f'<div style="font-size:24pt; filter:drop-shadow(2px 2px 2px black);">📌</div>'),
@@ -162,14 +165,14 @@ with tab1:
                     "Repartidor": nombre,
                     "Salida": r_ini["Hora"],
                     "Llegada": r_fin["Hora"],
-                    "Evidencias": u_data['url_limpia'].notna().sum(),
+                    "📸": u_data['url_limpia'].notna().sum(),
                     "Distancia": f"{dist_u:.2f} km"
                 })
 
         m.fit_bounds(df_f[["Latitud", "Longitud"]].values.tolist())
         st_folium(m, width="100%", height=600, returned_objects=[])
 
-        # --- SECCIÓN DE REPORTE Y GALERÍA ---
+        # --- REPORTE Y GALERÍA ---
         if modo_reporte:
             st.markdown("### 📋 Resumen de Jornada")
             st.table(pd.DataFrame(resumen_jornada))
@@ -177,15 +180,7 @@ with tab1:
             st.markdown("### 📸 Galería de Testigos")
             df_gal = df_f[df_f['url_limpia'].notna()]
             if not df_gal.empty:
-                cols = st.columns(2) # 2 columnas para que en móvil se vea bien grande
+                cols = st.columns(2)
                 for idx, (_, f_row) in enumerate(df_gal.iterrows()):
                     with cols[idx % 2]:
                         st.image(f_row['url_limpia'], caption=f"{f_row['Usuario']} – {f_row['Hora']}")
-            else:
-                st.info("Sin evidencias fotográficas.")
-
-with tab2:
-    st.header("☁️ Cierre de Jornada")
-    if st.button("🚀 Procesar y Archivar", type="primary"):
-        # Tu lógica de Cloudinary/Sheets...
-        st.success("✅ Cierre completado")
