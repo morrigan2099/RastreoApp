@@ -23,7 +23,7 @@ st.markdown("""
 .block-container {
     padding-top: 0rem !important;
     padding-bottom: 0rem !important;
-    padding-left: 1rem !important; /* Mínimo padding lateral */
+    padding-left: 1rem !important;
     padding-right: 1rem !important;
 }
 header[data-testid="stHeader"] { background: transparent !important; }
@@ -31,26 +31,24 @@ header[data-testid="stHeader"] button { color: var(--text-color) !important; z-i
 [data-testid="stDecoration"] { display: none !important; }
 footer { display: none !important; }
 
-/* 2. TÍTULO (Más abajo, más grande, alineado a la izquierda) */
+/* 2. TÍTULO */
 .title-container {
     display: flex;
     align-items: center;
-    margin-top: 40px; /* Bajado más */
+    margin-top: 40px;
     margin-bottom: 15px;
-    margin-left: 2px; /* Alineado casi total a la izquierda */
+    margin-left: 2px;
     color: var(--text-color);
 }
 
-/* Emoji Gigante */
 .title-emoji {
-    font-size: clamp(50px, 14vw, 75px); /* Aumentado */
+    font-size: clamp(50px, 14vw, 75px);
     margin-right: 10px;
     line-height: 1;
     display: flex;
     align-items: center;
 }
 
-/* Texto de 2 líneas */
 .title-text-block {
     display: flex;
     flex-direction: column;
@@ -59,14 +57,14 @@ footer { display: none !important; }
 
 .title-main {
     font-weight: 900;
-    font-size: clamp(28px, 8vw, 40px); /* Título más grande */
+    font-size: clamp(28px, 8vw, 40px);
     line-height: 1.0;
     text-transform: uppercase;
 }
 
 .title-sub {
     font-weight: 600;
-    font-size: clamp(16px, 5vw, 24px); /* Subtítulo más grande */
+    font-size: clamp(16px, 5vw, 24px);
     line-height: 1.1;
     opacity: 0.8;
 }
@@ -82,12 +80,12 @@ footer { display: none !important; }
 .gallery-item {
     box-sizing: border-box;
     padding: 4px;
-    width: 25%; /* Escritorio: 4 */
+    width: 25%;
 }
 
 @media (max-width: 768px) {
     .gallery-item {
-        width: 50% !important; /* MÓVIL: 2 COLUMNAS */
+        width: 50% !important;
     }
 }
 
@@ -167,7 +165,7 @@ def calcular_distancia(lat1, lon1, lat2, lon2):
 # APP
 # ==========================================================
 
-# TÍTULO HTML (Emoji 🏃🏽‍♂️ + Texto en 2 líneas)
+# TÍTULO
 titulo_html = """
 <div class="title-container">
     <div class="title-emoji">🏃🏽‍♂️</div>
@@ -203,23 +201,42 @@ with tab1:
     else:
         df["url_limpia"] = None
 
+    # --- SIDEBAR CONFIG ---
     with st.sidebar:
         st.header("⚙️ Filtros")
+        
+        # 1. Filtro Usuarios
         usuarios_lista = sorted(df["Usuario"].dropna().unique().tolist())
         sel_usuarios = st.multiselect("Repartidores", usuarios_lista, default=usuarios_lista)
-        tipo_mapa = st.radio("Capa", ["Calle", "Satélite"])
+        
+        st.markdown("---")
+        
+        # 2. Config Mapa
+        tipo_mapa = st.radio("Capa Base", ["Calle", "Satélite"])
+        ver_miniaturas = st.checkbox("📸 Ver Miniaturas en Mapa", value=True)
+        
+        st.markdown("---")
+        
+        # 3. MODO REPORTE (Afecta tamaño mapa y zoom)
+        modo_reporte = st.checkbox("📑 Modo Reporte (Imprimir)", value=False)
+        
         if st.button("🔄 Actualizar"): st.rerun()
 
     if sel_usuarios:
         df_f = df[df["Usuario"].isin(sel_usuarios)].copy()
         
+        # --- DEFINIR TAMAÑO DEL MAPA SEGÚN MODO REPORTE ---
+        altura_mapa = 600 if modo_reporte else 250
+        
         # --- MAPA ---
         m = folium.Map(location=[df_f["Latitud"].mean(), df_f["Longitud"].mean()], zoom_start=15, zoom_control=False)
+        
         if tipo_mapa == "Satélite":
             folium.TileLayer(tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', attr='Esri').add_to(m)
 
         colores = ['#FF0000', '#00FF00', '#0000FF', '#FF00FF', '#FF8C00']
         stats_list = []
+        all_coords = [] # Para el auto-zoom global
 
         for i, nombre in enumerate(sel_usuarios):
             color = colores[i % len(colores)]
@@ -228,7 +245,9 @@ with tab1:
             if not u_data.empty:
                 dist_u = 0.0
                 coords = u_data[["Latitud", "Longitud"]].values.tolist()
+                all_coords.extend(coords)
                 
+                # RUTA (Siempre visible si el usuario está seleccionado)
                 if len(coords) > 1:
                     linea = folium.PolyLine(coords, color=color, weight=4).add_to(m)
                     PolyLineTextPath(linea, ' ▶ ', repeat=True, offset=15, attributes={'fill': color, 'font-size': '12'}).add_to(m)
@@ -238,20 +257,22 @@ with tab1:
                     if j < len(u_data) - 1:
                         dist_u += calcular_distancia(row["Latitud"], row["Longitud"], u_data.iloc[j+1]["Latitud"], u_data.iloc[j+1]["Longitud"])
                     
-                    # Pin 15 mins
+                    # Pin 15 mins (Ruta)
                     if ult_hito is None or (row["Hora_dt"] - ult_hito).total_seconds() >= 900:
                         folium.Marker([row["Latitud"], row["Longitud"]], 
                                       icon=folium.DivIcon(html=f'<div style="font-size:18pt;">📍</div>'),
                                       popup=f"{nombre}<br>{row['Hora']}").add_to(m)
                         ult_hito = row["Hora_dt"]
                     
-                    # Miniatura
-                    if row['url_limpia']:
+                    # CAPA DE MINIATURAS (Solo si el checkbox está activo)
+                    if ver_miniaturas and row['url_limpia']:
                         popup_html = f'<img src="{row["url_limpia"]}" style="max-width:220px; max-height:220px; object-fit:contain; border-radius:4px;">'
+                        
                         folium.Marker([row["Latitud"], row["Longitud"]],
                             icon=folium.DivIcon(html=f'<div style="width:30px; height:30px; border:2px solid {color}; background:white; border-radius:4px; overflow:hidden;"><img src="{row["url_limpia"]}" style="width:100%; height:100%; object-fit:cover;"></div>'),
                             popup=folium.Popup(popup_html, max_width=230)).add_to(m)
 
+                # Inicio / Fin
                 r_ini, r_fin = u_data.iloc[0], u_data.iloc[-1]
                 off = 0.00009 if (abs(r_ini["Latitud"] - r_fin["Latitud"]) < 0.00005) else 0
                 folium.Marker([r_ini["Latitud"], r_ini["Longitud"]], icon=folium.DivIcon(html='<div style="font-size:22pt;">📌</div>'), popup=f"Inicio: {r_ini['Hora']}").add_to(m)
@@ -259,22 +280,25 @@ with tab1:
                 
                 stats_list.append({"Repartidor": nombre, "Fotos": u_data['url_limpia'].notna().sum(), "Dist.": f"{dist_u:.2f} km"})
 
-        # ALTURA DEL MAPA: 250px
-        st_folium(m, width="100%", height=250, returned_objects=[])
+        # AUTO ZOOM (Fit Bounds) si hay coordenadas
+        if all_coords:
+            m.fit_bounds(all_coords)
+
+        # RENDERIZAR MAPA (Altura dinámica)
+        st_folium(m, width="100%", height=altura_mapa, returned_objects=[])
 
         st.markdown("### 📊 Estadísticas")
         st.dataframe(pd.DataFrame(stats_list), use_container_width=True, hide_index=True)
         
-        st.markdown("### 📸 Evidencias")
+        # --- GALERÍA (Solo visible si hay fotos) ---
         df_gal = df_f[df_f['url_limpia'].notna()]
-        
         if not df_gal.empty:
+            st.markdown("### 📸 Evidencias")
             html_parts = ['<div class="gallery-container">']
             for _, row in df_gal.iterrows():
                 url = row['url_limpia']
                 user = str(row['Usuario']).split()[0].replace("<","").replace(">","")
                 hora = str(row['Hora'])[:5]
-                # HTML compactado
                 html_parts.append(f'<div class="gallery-item"><a href="{url}" target="_blank" style="text-decoration:none;"><div class="photo-card"><img src="{url}" loading="lazy"><div class="photo-caption">{user} {hora}</div></div></a></div>')
             html_parts.append('</div>')
             st.markdown("".join(html_parts), unsafe_allow_html=True)
