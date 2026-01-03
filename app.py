@@ -120,21 +120,18 @@ with tab1:
                 coords = u_data[["Latitud", "Longitud"]].values.tolist()
                 dist_u = 0.0
                 
-                # 1. RUTA
                 if len(coords) > 1:
                     linea = folium.PolyLine(coords, color=color, weight=4, opacity=0.8).add_to(m)
                     PolyLineTextPath(linea, '                                ►                                ', 
                                      repeat=True, offset=8, 
                                      attributes={'fill': color, 'font-weight': 'bold', 'font-size': '22', 'stroke': 'black', 'stroke-width': '1'}).add_to(m)
 
-                # 2. MINIATURAS, KM Y PINES DE TIEMPO
                 ult_hito = None
                 for j, row in u_data.iterrows():
                     if j < len(u_data) - 1:
                         p_next = u_data.iloc[j+1]
                         dist_u += calcular_distancia(row["Latitud"], row["Longitud"], p_next["Latitud"], p_next["Longitud"])
 
-                    # --- PINES CADA 15 MINUTOS (Tamaño 20) 📍 ---
                     if ult_hito is None or (row["Hora_dt"] - ult_hito).total_seconds() >= 900:
                         folium.Marker(
                             [row["Latitud"], row["Longitud"]],
@@ -148,7 +145,6 @@ with tab1:
                         ).add_to(m)
                         ult_hito = row["Hora_dt"]
 
-                    # Miniaturas HD (Perfect Zoom)
                     if row['url_limpia']:
                         img_off = 0.00005 if (j == 0 or j == len(u_data)-1) else 0
                         folium.Marker(
@@ -157,12 +153,10 @@ with tab1:
                                 <div style="width:55px; height:55px; border:3px solid {color}; background:white; box-shadow:2px 2px 6px black; border-radius:6px; overflow:hidden; display:flex;">
                                     <img src="{row['url_limpia']}" style="width:100%; height:100%; object-fit:cover; transform:scale(1.4);">
                                 </div>'''),
-                            # POPUP AJUSTADO: width="180" para que no sea inmenso
                             popup=folium.Popup(f'<b>{nombre}</b><br><img src="{row["url_limpia"]}" width="180">', max_width=200),
                             z_index_offset=100
                         ).add_to(m)
 
-                # 3. INICIO Y FIN (Offset 1/5 corregido)
                 r_ini, r_fin = u_data.iloc[0], u_data.iloc[-1]
                 mismo_sitio = (abs(r_ini["Latitud"] - r_fin["Latitud"]) < 0.00005 and abs(r_ini["Longitud"] - r_fin["Longitud"]) < 0.00005)
                 off = 0.00009 if mismo_sitio else 0
@@ -183,29 +177,18 @@ with tab1:
                 })
 
         m.fit_bounds(df_f[["Latitud", "Longitud"]].values.tolist())
-        # --- RENDERIZADO DEL MAPA OPTIMIZADO PARA MÓVIL ---
-        # Reducimos height a 450 para que en móvil no ocupe toda la pantalla
-        # y el usuario pueda scrollear la página por los lados o abajo.
-        st_folium(
-            m, 
-            width="100%", 
-            height=450, 
-            returned_objects=[],
-            dragging=True  # Permite mover el mapa con el dedo
-        )
+
+        # MAPA OPTIMIZADO (Altura 450px para evitar "trampa de dedos" en móvil)
+        st_folium(m, width="100%", height=450, returned_objects=[])
 
         if modo_reporte:
-            # Añadimos un espacio extra para que sea fácil salir del mapa con el scroll
             st.markdown("<br>", unsafe_allow_html=True)
-            
             st.markdown("### 📋 Resumen de Jornada")
-            # Usamos dataframe en lugar de table para que tenga scroll horizontal en móvil
             st.dataframe(pd.DataFrame(resumen_jornada), use_container_width=True)
             
             st.markdown("### 📸 Galería")
             df_gal = df_f[df_f['url_limpia'].notna()]
             if not df_gal.empty:
-                # En móvil forzamos 2 columnas para que las fotos sean grandes
                 cols = st.columns(2)
                 for idx, (_, f_row) in enumerate(df_gal.iterrows()):
                     with cols[idx % 2]:
@@ -214,5 +197,4 @@ with tab1:
 with tab2:
     st.header("☁️ Cierre de Jornada")
     if st.button("🚀 Procesar y Archivar", type="primary"):
-        # Tu lógica original...
         st.success("✅ Cierre completado")
