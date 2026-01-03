@@ -138,25 +138,25 @@ import ast
 from streamlit_folium import st_folium
 from folium.plugins import PolyLineTextPath
 
-# --- 1. EXTRACCIÓN MAESTRA DE IMÁGENES (Basado en el proceso de 4 pasos) ---
+# --- 1. FUNCIÓN DE EXTRACCIÓN MAESTRA (Basada en tu proceso de 4 pasos) ---
 def obtener_url_final(valor):
     if not valor or str(valor).lower() in ['nan', 'none', '', '[]']:
         return None
     try:
-        # Si Airtable ya descargó la foto de Cloudinary (Formato Attachment)
+        # Si Airtable ya procesó la URL de Cloudinary (Formato Attachment)
         if isinstance(valor, list) and len(valor) > 0:
             if isinstance(valor[0], dict):
-                # Priorizamos la miniatura (large) para que el mapa cargue rápido
+                # Intentamos obtener la miniatura 'large' para que el mapa no sea pesado
                 thumbnails = valor[0].get('thumbnails', {})
                 return thumbnails.get('large', {}).get('url') or valor[0].get('url')
             return str(valor[0])
         
-        # Si el valor es el link directo de Cloudinary (Paso 3 del proceso)
+        # Si el valor es el link directo de Cloudinary (Caso del registro ficticio)
         val_str = str(valor).strip()
         if val_str.startswith('http'):
             return val_str
             
-        # Si viene como un string de lista que no se convirtió
+        # Si viene como un texto que parece lista "[{...}]"
         if val_str.startswith('['):
             datos = ast.literal_eval(val_str)
             if isinstance(datos, list) and len(datos) > 0:
@@ -171,16 +171,16 @@ def calcular_distancia_real(lat1, lon1, lat2, lon2):
     a = math.sin(dlat / 2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2)**2
     return R * (2 * math.atan2(math.sqrt(a), math.sqrt(1 - a)))
 
-# --- SECCIÓN 4: PANEL DE CONTROL Y MAPA ---
+# --- SECCIÓN 4: MAPA Y REPORTE ---
 if not df_gps.empty:
     st.markdown("---")
     
-    # Nombres de columnas según tu tabla
+    # Nombres exactos de tus columnas según la captura
     c_lat, c_lon = "Latitud", "Longitud"
     c_user, c_hora = "Usuario", "Hora"
     c_foto, c_etiqueta = "Foto", "Etiqueta_Foto"
 
-    # Preparación y Limpieza
+    # Preparación y pre-procesamiento de URLs
     df_gps[c_lat] = pd.to_numeric(df_gps[c_lat], errors='coerce')
     df_gps[c_lon] = pd.to_numeric(df_gps[c_lon], errors='coerce')
     df_gps = df_gps.dropna(subset=[c_lat, c_lon])
@@ -189,7 +189,7 @@ if not df_gps.empty:
         df_gps['hora_dt'] = pd.to_datetime(df_gps[c_hora], format='%H:%M:%S', errors='coerce')
         df_gps = df_gps.sort_values(by=[c_user, 'hora_dt'])
 
-    # Sidebar
+    # Sidebar para controles
     with st.sidebar:
         st.header("⚙️ Configuración")
         tipo_mapa = st.radio("Vista", ["Calle", "Satélite"])
@@ -200,7 +200,7 @@ if not df_gps.empty:
     df_f = df_gps[df_gps[c_user].isin(sel_usuarios)].copy()
 
     if not df_f.empty:
-        # Pre-procesar URLs de fotos
+        # Pre-procesamos todas las URLs antes de dibujar
         df_f['url_final'] = df_f[c_foto].apply(obtener_url_final)
         
         m = folium.Map(location=[df_f[c_lat].mean(), df_f[c_lon].mean()], zoom_start=15, zoom_control=False)
@@ -211,7 +211,7 @@ if not df_gps.empty:
             folium.TileLayer('OpenStreetMap').add_to(m)
 
         colores = ['#FF0000', '#00FF00', '#0000FF', '#FF00FF', '#FF8C00']
-        resumen_auditoria = []
+        resumen_final = []
 
         for i, nombre in enumerate(sel_usuarios):
             color = colores[i % len(colores)]
@@ -223,12 +223,12 @@ if not df_gps.empty:
                 
                 # 1. RUTA (Glow Negro + Color + Flechas Espaciadas)
                 if len(coords) > 1:
-                    folium.PolyLine(coords, color='black', weight=7, opacity=0.4).add_to(m) # GLOW
-                    linea = folium.PolyLine(coords, color=color, weight=3).add_to(m) # LÍNEA
+                    folium.PolyLine(coords, color='black', weight=7, opacity=0.4).add_to(m) # Marco Negro
+                    linea = folium.PolyLine(coords, color=color, weight=3).add_to(m) # Línea Color
                     PolyLineTextPath(linea, '                        ►                        ', repeat=True, offset=8, 
                                      attributes={'fill': color, 'font-weight': 'bold', 'font-size': '22', 'stroke': 'black', 'stroke-width': '0.7'}).add_to(m)
 
-                # 2. PROCESAMIENTO
+                # 2. PROCESAMIENTO DE PUNTOS
                 ult_hito = None
                 for j in range(len(u_data)):
                     row = u_data.iloc[j]
@@ -265,25 +265,26 @@ if not df_gps.empty:
                 folium.Marker([r_ini[c_lat], r_ini[c_lon]], icon=folium.DivIcon(html='<div style="font-size:28pt; filter: drop-shadow(2px 2px 3px black);">📌</div>'), popup=f"SALIDA: {r_ini[c_hora]}").add_to(m)
                 folium.Marker([r_fin[c_lat]+0.00002, r_fin[c_lon]+0.00002], icon=folium.DivIcon(html='<div style="font-size:28pt; filter: drop-shadow(2px 2px 3px black);">🏁</div>'), popup=f"FIN: {r_fin[c_hora]}").add_to(m)
 
-                resumen_auditoria.append({"Repartidor": nombre, "Salida": r_ini[c_hora], "Llegada": r_fin[c_hora], "KM": f"{dist_total:.2f} km"})
+                resumen_final.append({"Repartidor": nombre, "Salida": r_ini[c_hora], "Llegada": r_fin[c_hora], "Distancia": f"{dist_total:.2f} km"})
 
         m.fit_bounds(df_f[[c_lat, c_lon]].values.tolist())
         st_folium(m, width="100%", height=700, returned_objects=[])
 
+        # --- REPORTE Y GALERÍA ---
         if modo_reporte:
             st.markdown("### 📋 Resumen de Jornada")
-            st.table(pd.DataFrame(resumen_auditoria))
-            st.write("### 📸 Galería de Testigos")
+            st.table(pd.DataFrame(resumen_final))
             
-            # Galería de Fotos REALES
+            st.write("### 📸 Galería de Testigos")
             df_fotos = df_f[df_f['url_final'].notna()]
+            
             if not df_fotos.empty:
                 cols_g = st.columns(4)
                 for idx, (original_idx, f_row) in enumerate(df_fotos.iterrows()):
                     with cols_g[idx % 4]:
                         st.image(f_row['url_final'], caption=f"{f_row[c_user]} - {f_row.get(c_etiqueta, 'Foto')} ({f_row[c_hora]})")
             else:
-                st.info("No hay fotografías físicas registradas.")
+                st.info("No se encontraron fotografías físicas en los registros.")
               
 # ------------------------------------------
 # PESTAÑA 2: MOTOR DE MIGRACIÓN
