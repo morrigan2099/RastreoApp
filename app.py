@@ -130,7 +130,7 @@ with tab1:
         
         st.metric("📦 Paquetes/Evidencias hoy", len(df_fotos))
         
-        # 4. MAPA FORENSE AVANZADO (Flechas, Inicio y Capas de Repartidor)
+        # 4. MAPA FORENSE DE PRECISIÓN (Iconos: Pin de Inicio y Bandera de Meta)
         if not df_gps.empty and 'Latitud' in df_gps.columns and 'Longitud' in df_gps.columns:
             # A. Limpieza
             df_gps['Latitud'] = pd.to_numeric(df_gps['Latitud'], errors='coerce')
@@ -142,11 +142,7 @@ with tab1:
 
             if not df_gps.empty:
                 st.write("### 📍 Panel de Control de Rutas")
-                tipo_mapa = st.radio(
-                    "Fondo del mapa:",
-                    ["🌎 Satélite", "🗺️ Calles", "🌑 Oscuro"],
-                    horizontal=True, label_visibility="collapsed"
-                )
+                tipo_mapa = st.radio("Fondo:", ["🌎 Satélite", "🗺️ Calles", "🌑 Oscuro"], horizontal=True, label_visibility="collapsed")
 
                 # Configuración de Fondo
                 if "Satélite" in tipo_mapa:
@@ -169,69 +165,62 @@ with tab1:
                 else:
                     folium.TileLayer('OpenStreetMap', control=False).add_to(m)
 
+                # Función para calcular color inverso
+                def color_inverso(hex_color):
+                    hex_color = hex_color.lstrip('#')
+                    rgb = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+                    inv_rgb = tuple(255 - c for c in rgb)
+                    return '#%02x%02x%02x' % inv_rgb
+
                 # --- LÓGICA DE CAPAS POR REPARTIDOR ---
                 repartidores = df_gps['Usuario'].unique() if 'Usuario' in df_gps.columns else ['Desconocido']
-                colores_ruta = ['#FFFF00', '#00FFFF', '#FF00FF', '#00FF00', '#FF4500', '#ADFF2F', '#00BFFF']
+                colores_ruta = ['#FFFF00', '#00FFFF', '#FF00FF', '#00FF00', '#FF4500', '#007BFF', '#FFFFFF']
 
                 for i, nombre in enumerate(repartidores):
-                    # Crear Capa de "Photoshop" para el Repartidor
-                    capa_rep = folium.FeatureGroup(name=f"📦 Repartidor: {nombre}")
+                    capa_rep = folium.FeatureGroup(name=f"🙋🏻‍♂️ {nombre}") 
                     color_u = colores_ruta[i % len(colores_ruta)]
+                    color_inv = color_inverso(color_u)
                     
                     datos_u = df_gps[df_gps['Usuario'] == nombre]
                     coords = datos_u[['Latitud', 'Longitud']].values.tolist()
                     
-                    if len(coords) > 0:
-                        # 1. LA RUTA (El garabato)
+                    if len(coords) > 1:
+                        # 1. RUTA (Garabato)
                         linea = folium.PolyLine(
-                            locations=coords,
-                            color=color_u,
-                            weight=2,
-                            opacity=0.8,
-                            no_clip=True
+                            locations=coords, color=color_u, weight=2, opacity=0.8, no_clip=True
                         ).add_to(capa_rep)
 
-                        # 2. FLECHAS DE DIRECCIÓN (PolyLineTextPath)
-                        # Ponemos flechas cada cierto tramo de la línea
+                        # 2. FLECHAS (Espaciadas)
                         folium.plugins.PolyLineTextPath(
-                            linea,
-                            '  ►  ', # El símbolo de la flecha
-                            repeat=True,
-                            offset=7,
-                            attributes={'fill': color_u, 'font-weight': 'bold', 'font-size': '14'}
+                            linea, '     ►     ', 
+                            repeat=True, offset=8, 
+                            attributes={'fill': color_u, 'font-weight': 'bold', 'font-size': '16'}
                         ).add_to(capa_rep)
 
-                        # 3. PUNTO DE INICIO (Color Contrastante: Blanco con borde Verde)
-                        inicio = coords[0]
-                        folium.CircleMarker(
-                            location=inicio,
-                            radius=6,
-                            color='#00FF00', # Verde Neón
-                            fill=True,
-                            fill_color='white',
-                            fill_opacity=1,
-                            popup=f"🚀 INICIO DE RUTA: {nombre}<br>Hora: {datos_u.iloc[0].get('Hora','-')}",
-                            tooltip="PUNTO DE INICIO"
+                        # 3. ICONO DE INICIO (PIN)
+                        folium.Marker(
+                            location=coords[0],
+                            icon=folium.Icon(color='white', icon_color=color_inv, icon='play', prefix='fa'),
+                            popup=f"🚀 SALIDA: {nombre}<br>Hora: {datos_u.iloc[0].get('Hora','-')}"
                         ).add_to(capa_rep)
 
-                        # 4. PUNTOS DE TRAYECTO (Muy pequeños)
+                        # 4. ICONO DE FIN (BANDERA)
+                        folium.Marker(
+                            location=coords[-1],
+                            icon=folium.Icon(color='white', icon_color=color_inv, icon='flag-checkered', prefix='fa'),
+                            popup=f"🏁 LLEGADA: {nombre}<br>Hora: {datos_u.iloc[-1].get('Hora','-')}"
+                        ).add_to(capa_rep)
+
+                        # 5. HITOS GPS (Solo para referencia)
                         for _, row in datos_u.iterrows():
                             folium.CircleMarker(
-                                location=[row['Latitud'], row['Longitud']],
-                                radius=1.5,
-                                color=color_u,
-                                fill=True,
-                                fill_opacity=0.5,
-                                popup=f"Repartidor: {nombre}<br>Hora: {row.get('Hora', '-')}"
+                                location=[row['Latitud'], row['Longitud']], radius=1,
+                                color=color_u, fill=True, fill_opacity=0.3
                             ).add_to(capa_rep)
 
-                    # Añadir capa al mapa
                     capa_rep.add_to(m)
 
-                # Control de capas (Checkbox)
                 folium.LayerControl(collapsed=False).add_to(m)
-
-                # Mostrar mapa
                 st_folium(m, width=1200, height=600)
 # ------------------------------------------
 # PESTAÑA 2: MOTOR DE MIGRACIÓN
