@@ -21,19 +21,16 @@ st.set_page_config(page_title="Monitor de Reparto Pro", layout="wide")
 # CARGA DE CREDENCIALES (SECRETS)
 # ==========================================================
 try:
-    # Airtable
     AIRTABLE_API_KEY = st.secrets["AIRTABLE_API_KEY"]
     AIRTABLE_BASE_ID = st.secrets["AIRTABLE_BASE_ID"]
     AIRTABLE_TABLE_NAME = st.secrets["AIRTABLE_TABLE_NAME"]
     
-    # Cloudinary
     cloudinary.config(
         cloud_name=st.secrets["CLOUDINARY_CLOUD_NAME"],
         api_key=st.secrets["CLOUDINARY_API_KEY"],
         api_secret=st.secrets["CLOUDINARY_API_SECRET"]
     )
     
-    # Google Sheets
     g_creds = dict(st.secrets["google_creds"])
     g_creds["private_key"] = g_creds["private_key"].replace("\\n", "\n")
     creds = Credentials.from_service_account_info(
@@ -46,7 +43,7 @@ try:
     table = api.table(AIRTABLE_BASE_ID, AIRTABLE_TABLE_NAME)
     
 except Exception as e:
-    st.error(f"❌ Error en Secrets: {e}. Asegúrate de que el formato en la web sea el correcto.")
+    st.error(f"❌ Error en Secrets: {e}")
     st.stop()
 
 # ==========================================================
@@ -77,7 +74,7 @@ st.title("🚚 Monitor de Reparto Pro")
 tab1, tab2 = st.tabs(["📍 Mapa de Ruta", "☁️ Cierre de Jornada"])
 
 with tab1:
-    if st.button("🔄 Actualizar"):
+    if st.button("🔄 Actualizar Mapa"):
         st.rerun()
 
     records = table.all()
@@ -120,41 +117,52 @@ with tab1:
             if not u_data.empty:
                 coords = u_data[["Latitud", "Longitud"]].values.tolist()
                 
-                # RUTA Y FLECHAS (1/4 de densidad)
+                # RUTA Y FLECHAS (Reducidas y delineadas)
                 if len(coords) > 1:
-                    linea = folium.PolyLine(coords, color=color, weight=4, opacity=0.8).add_to(m)
+                    folium.PolyLine(coords, color='black', weight=6, opacity=0.2).add_to(m)
+                    linea = folium.PolyLine(coords, color=color, weight=3).add_to(m)
                     PolyLineTextPath(linea, '                                ►                                ', 
                                      repeat=True, offset=8, 
-                                     attributes={'fill': color, 'font-weight': 'bold', 'font-size': '22', 'stroke': 'black', 'stroke-width': '1'}).add_to(m)
+                                     attributes={'fill': color, 'font-weight': 'bold', 'font-size': '18', 'stroke': 'black', 'stroke-width': '0.5'}).add_to(m)
 
-                # PUNTOS DE INTERÉS
+                # HITOS Y MINIATURAS
+                ult_hito = None
                 for j, row in u_data.iterrows():
-                    # MINIATURAS CON ZOOM (Llenado total)
+                    # Marcadores 15 min 📍 (Más pequeños)
+                    if ult_hito is None or (row["Hora_dt"] - ult_hito).total_seconds() >= 900:
+                        folium.Marker(
+                            [row["Latitud"], row["Longitud"]],
+                            icon=folium.DivIcon(html=f'''<div style="font-size:14pt; filter:drop-shadow(1px 1px 1px black);">📍</div>'''),
+                            popup=f"Hora: {row['Hora']}"
+                        ).add_to(m)
+                        ult_hito = row["Hora_dt"]
+
+                    # Miniaturas (Zoom perfecto sin bordes)
                     if row['url_limpia']:
                         folium.Marker(
                             [row["Latitud"], row["Longitud"]],
                             icon=folium.DivIcon(html=f'''
-                                <div style="width:55px; height:55px; border:3px solid {color}; background:white; box-shadow:2px 2px 5px rgba(0,0,0,0.5); border-radius:5px; overflow:hidden; display:flex; justify-content:center; align-items:center;">
+                                <div style="width:55px; height:55px; border:3px solid {color}; background:white; box-shadow:2px 2px 6px black; border-radius:6px; overflow:hidden; display:flex;">
                                     <img src="{row['url_limpia']}" style="width:100%; height:100%; object-fit:cover; transform:scale(1.4);">
                                 </div>'''),
                             popup=folium.Popup(f'<b>{nombre}</b><br><img src="{row["url_limpia"]}" width="200">', max_width=200)
                         ).add_to(m)
 
-                # INICIO Y FIN (OFFSET SI COINCIDEN)
+                # INICIO Y FIN (OFFSET PARA NO ENCIMARSE)
                 r_ini, r_fin = u_data.iloc[0], u_data.iloc[-1]
-                coinciden = (r_ini["Latitud"] == r_fin["Latitud"] and r_ini["Longitud"] == r_fin["Longitud"])
+                mismo_sitio = (r_ini["Latitud"] == r_fin["Latitud"] and r_ini["Longitud"] == r_fin["Longitud"])
                 
-                # Desplazamos la llegada un poco a la derecha si es el mismo punto
-                off_lat = 0.00015 if coinciden else 0
-                off_lon = 0.00015 if coinciden else 0
+                # Desplazamiento si coinciden (aprox 25 metros)
+                off_lat = 0.00025 if mismo_sitio else 0
+                off_lon = 0.00025 if mismo_sitio else 0
 
                 folium.Marker([r_ini["Latitud"], r_ini["Longitud"]], 
-                    icon=folium.DivIcon(html=f'<div style="font-size:30pt; filter:drop-shadow(2px 2px 2px black);">📌</div>'),
-                    popup=f"INICIO: {r_ini['Hora']}").add_to(m)
+                    icon=folium.DivIcon(html=f'<div style="font-size:22pt; filter:drop-shadow(2px 2px 2px black); cursor:pointer;">📌</div>'),
+                    popup=f"SALIDA: {r_ini['Hora']}", z_index_offset=1000).add_to(m)
                 
                 folium.Marker([r_fin["Latitud"] + off_lat, r_fin["Longitud"] + off_lon], 
-                    icon=folium.DivIcon(html=f'<div style="font-size:30pt; filter:drop-shadow(2px 2px 2px black);">🏁</div>'),
-                    popup=f"FIN: {r_fin['Hora']}").add_to(m)
+                    icon=folium.DivIcon(html=f'<div style="font-size:22pt; filter:drop-shadow(2px 2px 2px black); cursor:pointer;">🏁</div>'),
+                    popup=f"LLEGADA: {r_fin['Hora']}", z_index_offset=1000).add_to(m)
 
         m.fit_bounds(df_f[["Latitud", "Longitud"]].values.tolist())
         st_folium(m, width="100%", height=600, returned_objects=[])
